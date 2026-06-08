@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: tps1000
+
+  datasource:
+    url: jdbc:mysql://localhost:3307/tps1000?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
+    username: tps
+    password: tps1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 1000 TPS 목표 대비 커넥션 풀 튜닝은 부하테스트 단계에서 측정 기반으로 조정 (docs/benchmarks.md)
+      maximum-pool-size: 20
+
+  jpa:
+    hibernate:
+      ddl-auto: update          # 데모 단계: 엔티티 기반 자동 스키마. 운영이면 Flyway로 전환할 지점.
+    open-in-view: false         # OSIV 끔 — 영속성 컨텍스트 수명을 트랜잭션으로 한정 (커넥션 점유 시간 단축)
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: tps1000
+      auto-offset-reset: earliest
+
+  batch:
+    job:
+      enabled: false            # 부팅 시 잡 자동 실행 금지 (수동/스케줄 트리거)
+    jdbc:
+      initialize-schema: always # Spring Batch 메타테이블 자동 생성
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
