@@ -1,10 +1,14 @@
 package com.jypark.tps1000.common.config;
 
-import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.common.TopicPartition;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.KafkaAdmin;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.util.backoff.FixedBackOff;
 
 @Configuration
 public class KafkaConfig {
@@ -22,5 +26,18 @@ public class KafkaConfig {
                 TopicBuilder.name(ORDER_CREATED_TOPIC).partitions(3).replicas(1).build(),
                 TopicBuilder.name(ORDER_CREATED_DLQ).partitions(1).replicas(1).build()
         );
+    }
+
+    /**
+     * 재시도 + DLQ 정책 (docs/decisions.md 9번):
+     * 1초 고정 백오프 × 2회 재시도(총 3회 시도) 후 order.created.dlq로 발행.
+     * Boot가 이 CommonErrorHandler 빈을 기본 리스너 컨테이너 팩토리에 자동 연결한다.
+     * 파티션 -1: DLQ는 1파티션이라 원본 파티션(0~2)을 그대로 쓰면 존재하지 않을 수 있음 → 프로듀서에 위임.
+     */
+    @Bean
+    public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<Object, Object> kafkaTemplate) {
+        var recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate,
+                (record, ex) -> new TopicPartition(ORDER_CREATED_DLQ, -1));
+        return new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 2L));
     }
 }

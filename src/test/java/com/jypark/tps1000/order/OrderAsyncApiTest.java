@@ -15,12 +15,22 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -83,11 +93,54 @@ class OrderAsyncApiTest {
         kafkaTemplate.send(KafkaConfig.ORDER_CREATED_TOPIC, orderKey, event);
 
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
-                org.assertj.core.api.Assertions.assertThat(orderRepository.existsByOrderKey(orderKey)).isTrue());
+                assertThat(orderRepository.existsByOrderKey(orderKey)).isTrue());
 
         // 두 번째 이벤트(같은 파티션, 순차 처리)까지 소비될 시간을 준 뒤 호출 횟수 확인
         verify(notificationService, after(3000).times(1))
                 .notifyOrderAccepted(argThat(e -> e.orderKey().equals(orderKey)));
+    }
+
+    @Test
+    @DisplayName("처리 계속 실패 시: 1초 백오프 × 2회 재시도(총 3회) 후 DLQ로 라우팅, 주문은 저장되지 않음")
+    void processingFailure_retriesThenRoutesToDlq() {
+        String failKey = UUID.randomUUID().toString();
+        doThrow(new RuntimeException("알림 발송 실패(테스트 주입)"))
+                .when(notificationService)
+                .notifyOrderAccepted(argThat(e -> e != null && failKey.equals(e.orderKey())));
+
+        kafkaTemplate.send(KafkaConfig.ORDER_CREATED_TOPIC, failKey,
+                new OrderCreatedEvent(failKey, 9L, 1));
+
+        // FixedBackOff(1000ms, 2) → 총 3회 시도
+        verify(notificationService, timeout(15_000).times(3))
+                .notifyOrderAccepted(argThat(e -> e != null && failKey.equals(e.orderKey())));
+
+        ConsumerRecord<String, String> dlqRecord = pollDlqUntil(failKey, Duration.ofSeconds(15));
+        assertThat(dlqRecord.value()).contains(failKey);
+        assertThat(orderRepository.existsByOrderKey(failKey)).isFalse();
+    }
+
+    /** DLQ를 처음부터 읽어 key가 일치하는 레코드를 찾는다 (이전 런의 잔여 레코드는 무시). */
+    private ConsumerRecord<String, String> pollDlqUntil(String orderKey, Duration timeout) {
+        Map<String, Object> props = Map.of(
+                ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092",
+                ConsumerConfig.GROUP_ID_CONFIG, "dlq-test-" + UUID.randomUUID(),
+                ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
+                ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class,
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class
+        );
+        long deadline = System.nanoTime() + timeout.toNanos();
+        try (var consumer = new KafkaConsumer<String, String>(props)) {
+            consumer.subscribe(List.of(KafkaConfig.ORDER_CREATED_DLQ));
+            while (System.nanoTime() < deadline) {
+                for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(500))) {
+                    if (orderKey.equals(record.key())) {
+                        return record;
+                    }
+                }
+            }
+        }
+        throw new AssertionError("DLQ에서 orderKey=" + orderKey + " 레코드를 " + timeout + " 내에 찾지 못함");
     }
 
     @Test
