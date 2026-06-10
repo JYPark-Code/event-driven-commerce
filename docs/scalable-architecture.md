@@ -18,24 +18,29 @@
 
 ## 2. 전체 그림
 
-```
-                     Route 53 (DNS, 헬스체크 기반 failover)
-                          │
-                     CloudFront + WAF        ← 정적 자원·이미지 CDN, L7 공격 차단
-                          │
-                  ┌─── ALB (Multi-AZ) ───┐   ← TLS 종료, 헬스체크, 라운드로빈
-                  │                      │
-   ┌──────────────┼──────────────────────┼──────────────┐
-   │  AZ-a        │         AZ-b         │        AZ-c  │
-   │  [ECS Task]  │      [ECS Task]      │   [ECS Task] │  ← Auto Scaling (CPU·RPS·p95 기반)
-   │      │       │          │           │       │      │     stateless: 세션은 Redis, 인증은 JWT
-   └──────┼───────┴──────────┼───────────┴───────┼──────┘
-          │                  │                   │
-          ├── ElastiCache Redis (Primary + Replica, Multi-AZ)   ← L2 캐시·세션
-          ├── Aurora MySQL (Writer 1 + Reader N) ± RDS Proxy    ← 영속 저장
-          └── MSK (broker×3, 3 AZ, RF=3)                        ← 주문 이벤트, DLQ
-                     │
-              컨슈머 (같은 ECS 클러스터의 별도 서비스로 분리 배포 가능)
+```mermaid
+flowchart TB
+    R53["Route 53<br/>DNS · 헬스체크 기반 failover"] --> CF["CloudFront + WAF<br/>정적 자원 CDN · L7 공격 차단"]
+    CF --> ALB["ALB (Multi-AZ)<br/>TLS 종료 · 헬스체크 · 라운드로빈"]
+
+    subgraph ECS["ECS Fargate — Auto Scaling (CPU·RPS·p95 기반) · stateless (세션 Redis, 인증 JWT)"]
+        direction LR
+        T1["ECS Task — AZ-a"]
+        T2["ECS Task — AZ-b"]
+        T3["ECS Task — AZ-c"]
+    end
+
+    ALB --> T1 & T2 & T3
+
+    REDIS[("ElastiCache Redis<br/>Primary + Replica · Multi-AZ<br/>L2 캐시 · 세션")]
+    AURORA[("Aurora MySQL<br/>Writer 1 + Reader N<br/>± RDS Proxy")]
+    MSK[("MSK<br/>broker×3 · 3 AZ · RF=3<br/>주문 이벤트 · DLQ")]
+
+    ECS --> REDIS
+    ECS --> AURORA
+    ECS --> MSK
+    MSK --> CONS["컨슈머<br/>(같은 ECS 클러스터의 별도 서비스로<br/>분리 배포 가능)"]
+    CONS --> AURORA
 ```
 
 ## 3. 1000+ TPS를 받아내는 확장 전략
