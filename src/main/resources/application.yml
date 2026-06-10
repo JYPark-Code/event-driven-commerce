@@ -50,6 +50,17 @@ spring:
     jdbc:
       initialize-schema: always # Spring Batch 메타테이블 자동 생성
 
+jwt:
+  # 데모용 고정 키 (HS256은 256비트 이상 필요). 운영이면 환경변수/비밀관리자로 주입할 지점.
+  secret: tps1000-demo-jwt-secret-key-do-not-use-in-production-0123456789
+  expiry-seconds: 3600
+
+backoffice:
+  admin:
+    # ADMIN 시드 계정 (AdminAccountInitializer). 가입 API로는 USER만 생성 가능.
+    username: admin
+    password: admin1234!
+
 server:
   port: 8080
 
