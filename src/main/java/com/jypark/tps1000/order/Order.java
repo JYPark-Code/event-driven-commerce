@@ -28,6 +28,13 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * 비동기 주문의 멱등성 키(UUID). 접수 시점에 발급되어 클라이언트 조회 키로도 쓰인다.
+     * 유니크 제약이 중복 소비의 최종 방어선 (동기 주문은 null — MySQL 유니크는 null 중복 허용).
+     */
+    @Column(unique = true, updatable = false, length = 36)
+    private String orderKey;
+
     @Column(nullable = false)
     private Long productId;
 
@@ -41,7 +48,8 @@ public class Order {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    private Order(Long productId, int quantity) {
+    private Order(String orderKey, Long productId, int quantity) {
+        this.orderKey = orderKey;
         this.productId = productId;
         this.quantity = quantity;
         this.status = OrderStatus.CREATED;
@@ -49,6 +57,15 @@ public class Order {
     }
 
     public static Order create(Long productId, int quantity) {
-        return new Order(productId, quantity);
+        return new Order(null, productId, quantity);
+    }
+
+    public static Order fromEvent(String orderKey, Long productId, int quantity) {
+        return new Order(orderKey, productId, quantity);
+    }
+
+    /** 후속 처리(알림 등)까지 끝났을 때 컨슈머가 호출. */
+    public void complete() {
+        this.status = OrderStatus.COMPLETED;
     }
 }

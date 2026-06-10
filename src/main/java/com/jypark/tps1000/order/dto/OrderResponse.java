@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 
 public record OrderResponse(
         Long orderId,
+        String orderKey,    // 비동기 주문만 보유 (동기 주문은 null)
         Long productId,
         int quantity,
         OrderStatus status,
@@ -15,6 +16,7 @@ public record OrderResponse(
     public static OrderResponse from(Order order) {
         return new OrderResponse(
                 order.getId(),
+                order.getOrderKey(),
                 order.getProductId(),
                 order.getQuantity(),
                 order.getStatus(),
