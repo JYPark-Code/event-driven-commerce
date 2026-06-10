@@ -38,5 +38,7 @@ out/
 
 ### Project ###
 bootrun.log
+app.log
+app-err.log
 # 이력서(개인정보 포함) — 저장소 공개 대비 추적 제외
 docs/*.docx
