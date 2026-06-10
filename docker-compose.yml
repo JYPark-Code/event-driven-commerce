@@ -27,7 +27,7 @@ services:
     image: redis:7-alpine
     container_name: tps-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"  # 6379는 Windows Hyper-V 예약 포트 범위(6290-6389)에 걸려 바인딩 불가 → 회피 (docs/decisions.md)
     command: ["redis-server", "--appendonly", "yes"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

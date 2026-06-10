@@ -45,7 +45,7 @@ com.jypark.tps1000
 | 서비스 | 이미지 | 호스트 포트 | 용도 |
 |---|---|---|---|
 | MySQL | mysql:8.0 | 3307 | 영속 저장소 (3306은 로컬 mysqld 점유로 회피) |
-| Redis | redis:7-alpine | 6379 | L2 캐시 / 세션 (AOF) |
+| Redis | redis:7-alpine | 16379 | L2 캐시 / 세션 (AOF) — 6379는 Windows 예약 포트 범위라 회피 |
 | Kafka | apache/kafka:3.8.1 | 9092 | 비동기 메시징 (KRaft 단일 노드) |
 
 ## 실행 방법

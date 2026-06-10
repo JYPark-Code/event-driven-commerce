@@ -23,7 +23,7 @@ spring:
   data:
     redis:
       host: localhost
-      port: 6379
+      port: 16379  # 6379는 Windows 예약 포트 범위(6290-6389)에 걸림 → docker-compose에서 16379로 매핑
 
   kafka:
     bootstrap-servers: localhost:9092

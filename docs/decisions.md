@@ -49,13 +49,12 @@
 
 - **MySQL 8.0**: 영속 저장소. 호스트 **3307** 포트로 매핑(로컬 mysqld가 3306 점유 → 충돌 회피).
 - **Redis 7**: L2 캐시 + 세션. `appendonly yes`(AOF) — 이력서의 "AOF로 세션 영구 저장" 경험 반영.
+  - 호스트 포트 **16379** 매핑: 기본 6379가 Windows Hyper-V 동적 예약 포트 범위(6290–6389)에 걸려 바인딩 실패(`netsh interface ipv4 show excludedportrange protocol=tcp`로 확인). 이 범위는 재부팅마다 바뀔 수 있어 `winnat` 재시작 같은 일시 조치 대신 범위 밖 포트로 고정.
 - **Kafka 3.8.1 (KRaft 모드, 단일 노드)**:
   - **대안**: Zookeeper 동반 구성, Confluent 이미지.
   - **선택**: KRaft 단일 노드(apache/kafka 공식 이미지).
   - **이유**: Zookeeper 제거로 컨테이너 1개로 Kafka 운영 → 데모 환경 단순화. 공식 이미지가 KRaft 스토리지 자동 포맷 지원.
   - **트레이드오프**: 단일 브로커라 복제·고가용성은 시연 불가(replication-factor=1). 데모 목적상 수용.
-
----
 
 ## 앞으로 채울 결정들 (TODO)
 - [ ] 주문 멱등성 보장 방식 (주문ID 기준 중복 방지 — DB 유니크 제약 vs Redis SETNX vs Kafka 키 기반)
