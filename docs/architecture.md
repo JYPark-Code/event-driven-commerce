@@ -4,26 +4,65 @@
 
 ## 한눈에 보기
 
+```mermaid
+flowchart TB
+    Client([Client]) -- "HTTP" --> App
+    K6["k6 부하테스트<br/>1000 TPS 목표"] -. "부하 주입" .-> App
+    App -. "/actuator 메트릭" .-> K6
+
+    subgraph App["Spring Boot 단일 앱 — Java 17 / Boot 3.5.14"]
+        subgraph order["order — 주문 처리 (축 1)"]
+            SYNC["동기 주문"]
+            ASYNC["비동기 접수<br/>(즉시 202)"]
+            CONSUMER["Kafka Consumer<br/>배치 리스너 · 멱등 · DLQ·재시도"]
+            NOTI["notification<br/>(로그/모의 발송)"]
+        end
+        subgraph product["product — 캐시 계층화 (축 2)"]
+            L1["L1 캐시 (Caffeine)<br/>single-flight · TTL 60s"]
+        end
+        subgraph back["backoffice (축 3)"]
+            RBAC["Spring Security<br/>JWT + RBAC"]
+            BATCH["Spring Batch<br/>월별 정산"]
+        end
+    end
+
+    subgraph Infra["Docker Compose"]
+        KAFKA[("Kafka 3.8<br/>KRaft")]
+        REDIS[("Redis 7<br/>L2 캐시 · pub/sub")]
+        MYSQL[("MySQL 8.0")]
+    end
+
+    SYNC -- "INSERT" --> MYSQL
+    ASYNC -- "publish" --> KAFKA
+    KAFKA -- "consume (배치)" --> CONSUMER
+    CONSUMER -- "batch INSERT" --> MYSQL
+    CONSUMER --> NOTI
+    L1 -- "miss" --> REDIS
+    REDIS -- "miss" --> MYSQL
+    REDIS -. "L1 무효화 pub/sub" .-> L1
+    BATCH -- "orders 집계 (GROUP BY)" --> MYSQL
 ```
-                         ┌──────────────── k6 (부하: 1000 TPS 목표) ────────────────┐
-                         ▼                                                          │
-  Client ──HTTP──▶  Spring Boot (단일 앱, Java 17 / Boot 3.5.14)  ──── /actuator ───┘
-                         │
-   ┌─────────────────────┼───────────────────────────────────────────┐
-   │                     │                                            │
- [order]              [product]                                  [backoffice]
- 주문 처리            상품 조회 캐시 계층화                         RBAC + Batch
-   │                     │                                            │
-   │  동기 ▶ MySQL       │  L1 Caffeine ─miss▶ L2 Redis ─miss▶ MySQL  │  Spring Security(RBAC)
-   │  비동기 ▶ Kafka     │  변경 시 L1/L2 무효화                       │  Spring Batch(월별 정산)
-   │      producer       │                                            │
-   ▼                     ▼                                            ▼
- ┌───────┐   ┌───────┐   ┌───────┐
- │ Kafka │   │ Redis │   │ MySQL │   ← Docker Compose
- └───┬───┘   └───────┘   └───────┘
-     │ consumer (알림/후속처리) + DLQ·재시도
-     ▼
-  notification (로그/모의 발송)
+
+## 비동기 주문 흐름 (축 1 핵심)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as 주문 API
+    participant K as Kafka
+    participant CS as Consumer (배치 리스너)
+    participant DB as MySQL
+
+    C->>API: POST /api/orders/async
+    API->>K: OrderCreatedEvent 발행 (orderKey = UUID)
+    API-->>C: 202 Accepted + orderKey — p95 ≈ 1.6ms
+    K->>CS: 배치 poll (최대 500건)
+    CS->>DB: 기처리 필터 SELECT(IN) + multi-row INSERT IGNORE
+    Note over CS,DB: 멱등성 = 존재 확인(1차) + order_key 유니크 제약(2차)
+    CS->>CS: 후속 처리(알림) → COMPLETED
+    Note over K,CS: 실패 시 1초 백오프 × 2회 재시도 → order.created.dlq
+    C->>API: GET /api/orders/async/{orderKey} (폴링)
+    API-->>C: 200 COMPLETED / 404 (처리 전)
 ```
 
 ## 모듈(패키지) 구조
