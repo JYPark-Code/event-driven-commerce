@@ -124,10 +124,37 @@
 - **결정**: 모든 통합 테스트가 `IntegrationTestBase`(동일 어노테이션 + spy 선언)를 상속해 단일 컨텍스트 공유. 컨텍스트 1개 = 컨슈머 그룹 멤버 1세트 = 결정적 소비.
 - **부수 효과**: 컨텍스트 기동 1회로 테스트 스위트가 빨라짐.
 
+## 12. 상품 조회 캐시: look-aside 2계층 + 커밋 후 delete 무효화 (축 2)
+
+- **맥락**: 상품 조회는 읽기 편중(읽기 ≫ 쓰기) 워크로드의 대표. 이력서의 "Caffeine L1 → Redis L2 → MySQL 계층화 + 변경 시 무효화"를 실증한다. 캐싱 값은 엔티티가 아닌 `ProductResponse` DTO — 영속성 컨텍스트 밖에서 안전하고 직렬화 형태가 API 응답과 동일.
+
+- **읽기 경로: 수동 look-aside (L1 미스 → L2 → DB → 역방향 적재)**
+  - **대안**: Spring Cache 추상화(`@Cacheable` + 커스텀 2계층 CacheManager) — 코드는 짧지만 계층 전이·single-flight·부분 무효화가 추상화 뒤에 숨는다.
+  - **선택 이유**: 이 프로젝트의 목적이 "계층 동작을 이해하고 설명"이므로 L1→L2→DB 전이가 코드에 그대로 드러나는 명시적 구현(`ProductCacheLayer`)을 택했다. 캐시 히트 시 트랜잭션·DB 커넥션을 아예 타지 않는 것도 코드로 확인된다.
+  - **트레이드오프**: 다른 도메인에 재사용하려면 일반화 필요. 도메인 1개(상품)뿐이라 수용.
+
+- **무효화: invalidate-on-write — 새 값 set이 아니라 delete**
+  - **대안**: write-through(쓰기 시 캐시에 새 값 set) — 다음 조회가 미스를 안 내지만, 동시 쓰기 2건의 set 순서가 역전되면 **옛값이 최종 잔류**한다(write-write race). delete는 최악이 "미스 1회 추가"라 실패 모드가 안전한 쪽으로 닫힌다.
+  - **순서: DB 커밋 → L2 delete → pub/sub publish.** `TransactionTemplate`으로 커밋 시점을 코드에 드러냈다. `@Transactional` 메서드 안에서 evict하면 커밋 전에 다른 스레드가 옛값을 읽어 재적재한다.
+  - **잔여 race**: evict 직전(커밋 전)에 DB를 읽은 스레드가 evict 후에 캐시에 put하면 옛값이 남을 수 있다. 정석 해법(버전 비교 put, 지연 이중 삭제)은 데모 범위 밖 — **TTL이 불일치 상한**(L1 60초, L2 10분)이라는 것을 명시하고 수용.
+
+- **L1/L2 정합성: Redis pub/sub로 전 인스턴스 L1 evict + L1 TTL 백스톱**
+  - L2(Redis)는 공유라 delete 한 번이면 끝. 문제는 **프로세스 내 L1** — 멀티 인스턴스에서 다른 인스턴스의 L1은 원격에서 직접 못 지운다.
+  - **대안**: (a) L1에 짧은 TTL만 — 단순하지만 TTL 동안 인스턴스 간 불일치 방치. (b) Redis keyspace notifications — 키 이벤트를 구독하지만 설정 의존(`notify-keyspace-events`)이고 의미가 "키 삭제됨"뿐. (c) 명시적 무효화 채널 pub/sub.
+  - **선택**: (c) `cache:invalidate:product` 채널. 쓴 인스턴스도 채널 왕복을 기다리지 않고 로컬 L1은 즉시 제거.
+  - **한계**: pub/sub는 at-most-once — 구독 끊김/유실 시 그 인스턴스 L1엔 옛값이 남는다. → **L1 TTL 60초가 유실 시 불일치 상한**. (Kafka로 무효화 이벤트를 보내면 유실은 없지만 무효화 하나에 토픽·컨슈머 추가는 과함.)
+
+- **Cache Stampede 대응**
+  - **인스턴스 내**: Caffeine `get(key, loader)`가 같은 키의 동시 미스를 키 단위로 직렬화 — DB 로드는 1회만 실행(single-flight). 통합 테스트로 검증(동시 20조회 → `findById` 1회).
+  - **인스턴스 간**: 미적용 — 중복 로드 상한이 "인스턴스 수"라 폭주가 아니다. 대안(분산락 SETNX, PER(확률적 조기 재계산), logical TTL)은 비용 대비 이득이 데모에선 없음 — 면접에서 트레이드오프로 설명.
+  - **동시 만료 분산**: L2 TTL에 0~60초 jitter — 핫키들이 같은 순간 일제히 만료되어 DB로 몰리는 것을 분산.
+
+- **장애 격리**: L2 읽기/쓰기 실패(Redis 다운)는 캐시 미스로 강등하고 DB로 폴백 — 캐시 계층 장애가 조회 실패로 전파되지 않는다. 단, evict의 L2 delete가 실패하면 L2에 옛값이 TTL까지 잔류할 수 있음(로그로 감지).
+
 ---
 
 ## 앞으로 채울 결정들 (TODO)
-- [ ] 캐시 무효화 전략 (write-through vs invalidate-on-write, L1/L2 정합성, Cache Stampede 대응)
+- [x] 캐시 무효화 전략 → 12번 (측정은 benchmarks.md 측정 2)
 - [ ] RBAC 권한 모델 (역할/권한 테이블 설계, 메서드 보안 vs URL 보안)
 - [ ] 정산 배치 청크 크기 / 트랜잭션 경계
 - [ ] 1000 TPS 측정 시 커넥션 풀·스레드 풀·Kafka 파티션 수 튜닝
