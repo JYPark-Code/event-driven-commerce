@@ -9,14 +9,14 @@
 
 | 측정 | 결과 |
 |---|---|
-| 주문 접수: 동기 vs Kafka 비동기 (1000 req/s) | p95 **0.44~2.5s → 1.3~1.6ms**, drop 3,484 → **0** |
+| 주문 접수: 동기 vs Kafka 비동기 (1000 req/s) | p95 **0.44\~2.5s → 1.3\~1.6ms**, drop 3,484 → **0** |
 | 컨슈머 처리량: 레코드 단위 → 배치 리스너 + JDBC batch | **195건/s → 2,000건/s 이상** (스레드 수 동일, I/O 구조만 변경) |
 | 상품 조회: MySQL → L2(Redis) → L1(Caffeine) (1000 req/s) | p95 **541ms → 3.8ms → 577µs** |
-| 종합 혼합 부하 (조회 80% + 주문 20%) | **1000 TPS: 에러 0%, drop 0, p95 ≤3.5ms, 저장까지 ≤2초** — 한계는 3000~5000/s 사이 |
+| 종합 혼합 부하 (조회 80% + 주문 20%) | **1000 TPS: 에러 0%, drop 0, p95 ≤3.5ms, 저장까지 ≤2초** — 한계는 3000\~5000/s 사이 |
 | 데이터 정합성 (전 측정 누적) | 주문 중복 **0**, 미처리 **0** (멱등 키 + DB 유니크 제약) |
 
-> 측정 환경: i7-9700K / 32GB / Windows 11, 부하기(k6)·앱·Docker가 **같은 머신** —
-> 절대값보다 구성 간 상대 비교가 목적입니다. 방법론과 한계는 [benchmarks.md](docs/benchmarks.md) 참고.
+> 부하기(k6)·앱·Docker가 같은 머신에서 동작한 측정 — 절대값보다 구성 간 상대 비교가 목적입니다.
+> 방법론과 한계는 [benchmarks.md](docs/benchmarks.md) 참고.
 
 ## 4개 핵심 축
 
@@ -34,15 +34,39 @@
 
 ## 아키텍처
 
-```
- Client ──HTTP──▶ Spring Boot (Java 17 / Boot 3.5.14, 단일 앱)
-                    │
-   [order]          │  [product]                        [backoffice]
-   ├ 동기 → MySQL   │  L1 Caffeine ─miss→ L2 Redis      ├ Spring Security (JWT + RBAC)
-   └ 비동기 → Kafka │       ─miss→ MySQL                └ Spring Batch (월별 정산)
-        └ consumer (배치 리스너) + DLQ·재시도
-                    │
-        Kafka · Redis · MySQL  (Docker Compose)
+```mermaid
+flowchart TB
+    Client([Client]) -- HTTP --> App
+
+    subgraph App["Spring Boot 단일 앱 — Java 17 / Boot 3.5"]
+        direction TB
+        subgraph order["order — 주문 처리"]
+            SYNC["동기 주문"]
+            ASYNC["비동기 주문 접수 (즉시 202)"]
+            CONSUMER["Kafka Consumer<br/>배치 리스너 · DLQ · 재시도"]
+        end
+        subgraph product["product — 상품 조회"]
+            L1["L1 캐시 (Caffeine)"]
+        end
+        subgraph backoffice["backoffice"]
+            RBAC["Spring Security<br/>JWT + RBAC"]
+            BATCH["Spring Batch<br/>월별 정산"]
+        end
+    end
+
+    subgraph Infra["Docker Compose"]
+        KAFKA[("Kafka")]
+        REDIS[("Redis<br/>L2 캐시 · pub/sub")]
+        MYSQL[("MySQL")]
+    end
+
+    SYNC -- "INSERT" --> MYSQL
+    ASYNC -- "publish" --> KAFKA
+    KAFKA -- "consume" --> CONSUMER
+    CONSUMER -- "batch INSERT" --> MYSQL
+    L1 -- "miss" --> REDIS
+    REDIS -- "miss" --> MYSQL
+    BATCH -- "집계 (GROUP BY)" --> MYSQL
 ```
 
 상세: [docs/architecture.md](docs/architecture.md) · 멀티 인스턴스/AWS 확장 설계: [docs/scalable-architecture.md](docs/scalable-architecture.md)
