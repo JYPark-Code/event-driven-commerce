@@ -1,14 +1,10 @@
 package com.jypark.tps1000.order;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jypark.tps1000.IntegrationTestBase;
 import com.jypark.tps1000.order.dto.CreateOrderRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -17,17 +13,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 동기 주문 API 통합 테스트. docker compose 인프라(MySQL 3307)가 떠 있어야 한다.
+ * 동기 주문 API 통합 테스트.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-class OrderApiTest {
-
-    @Autowired
-    MockMvc mockMvc;
-
-    @Autowired
-    ObjectMapper objectMapper;
+class OrderApiTest extends IntegrationTestBase {
 
     @Test
     @DisplayName("주문 생성(동기): 201 + CREATED 상태로 저장되고, 조회로 다시 확인된다")

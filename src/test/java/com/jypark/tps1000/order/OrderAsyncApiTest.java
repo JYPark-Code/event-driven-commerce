@@ -1,18 +1,14 @@
 package com.jypark.tps1000.order;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jypark.tps1000.IntegrationTestBase;
 import com.jypark.tps1000.common.config.KafkaConfig;
 import com.jypark.tps1000.order.dto.CreateOrderRequest;
 import com.jypark.tps1000.order.event.OrderCreatedEvent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -38,26 +34,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * 비동기 주문 API 통합 테스트. docker compose 인프라(MySQL 3307, Kafka 9092)가 떠 있어야 한다.
+ * 비동기 주문 API 통합 테스트.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-class OrderAsyncApiTest {
-
-    @Autowired
-    MockMvc mockMvc;
-
-    @Autowired
-    ObjectMapper objectMapper;
+class OrderAsyncApiTest extends IntegrationTestBase {
 
     @Autowired
     KafkaTemplate<String, OrderCreatedEvent> kafkaTemplate;
 
     @Autowired
     OrderRepository orderRepository;
-
-    @MockitoSpyBean
-    OrderNotificationService notificationService;
 
     @Test
     @DisplayName("주문 접수(비동기): 202 + orderKey 즉시 반환 → 컨슈머가 처리하면 COMPLETED로 조회된다")
