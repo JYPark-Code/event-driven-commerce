@@ -23,7 +23,9 @@ public class OrderEventConsumer {
      * 2차 방어 — DB 유니크 제약. 검사를 뚫는 희귀한 경합이면 제약 위반 → 에러 핸들러 재시도 →
      *   존재 확인에 걸려 스킵 (자기 치유, DLQ로 가지 않음).
      */
-    @KafkaListener(topics = KafkaConfig.ORDER_CREATED_TOPIC, concurrency = "3")
+    // concurrency 프로퍼티화: 동시성 스케일 실험(측정 1-c)에서 재빌드 없이 변경하기 위함
+    @KafkaListener(topics = KafkaConfig.ORDER_CREATED_TOPIC,
+            concurrency = "${app.order-consumer.concurrency:3}")
     @Transactional
     public void consume(OrderCreatedEvent event) {
         if (orderRepository.existsByOrderKey(event.orderKey())) {

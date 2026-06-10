@@ -17,13 +17,14 @@ public class KafkaConfig {
     public static final String ORDER_CREATED_DLQ = "order.created.dlq";
 
     /**
-     * 파티션 3: 컨슈머 동시성(concurrency=3)과 맞춤. 파티션 수 튜닝은 부하 측정 단계에서.
+     * 파티션 12: 컨슈머 동시성 상한. 동시성 스케일 실험(측정 1-c)을 위해 3 → 12로 증설
+     * (KafkaAdmin이 부팅 시 기존 토픽의 파티션을 선언 수까지 늘려준다 — 줄이는 건 불가).
      * replicas 1: 로컬 단일 브로커(KRaft) 한계 — docs/decisions.md 4번 참고.
      */
     @Bean
     public KafkaAdmin.NewTopics orderTopics() {
         return new KafkaAdmin.NewTopics(
-                TopicBuilder.name(ORDER_CREATED_TOPIC).partitions(3).replicas(1).build(),
+                TopicBuilder.name(ORDER_CREATED_TOPIC).partitions(12).replicas(1).build(),
                 TopicBuilder.name(ORDER_CREATED_DLQ).partitions(1).replicas(1).build()
         );
     }
