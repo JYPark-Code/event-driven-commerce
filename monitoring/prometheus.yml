@@ -1,0 +1,11 @@
+# Spring Boot 앱(호스트 8080)의 Micrometer 메트릭을 5초 간격으로 수집.
+# 부하테스트(30초 런) 중 변화를 보려면 기본 15초는 너무 성기다.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: tps1000-app
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['host.docker.internal:8080']

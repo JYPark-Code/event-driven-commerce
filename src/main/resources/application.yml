@@ -72,3 +72,9 @@ management:
   endpoint:
     health:
       show-details: always
+  metrics:
+    distribution:
+      # Grafana에서 histogram_quantile()로 p95/p99를 계산하기 위한 버킷 노출.
+      # 버킷 시계열 추가 비용(~70개/uri)이 있으나 단일 앱 데모 규모에선 무시 가능 (docs/decisions.md 16번)
+      percentiles-histogram:
+        http.server.requests: true

@@ -77,11 +77,12 @@ flowchart TB
 - MySQL 8.0, Redis 7 (L2 캐시·pub/sub), Caffeine (L1 캐시)
 - Kafka 3.8 (KRaft) — Producer/Consumer(배치 리스너), DLQ, 재시도
 - Docker Compose, k6 (부하테스트)
+- Prometheus + Grafana — Micrometer 메트릭, 데이터소스·대시보드 프로비저닝 코드화 ([monitoring/](monitoring/))
 
 ## 실행 방법
 
 ```bash
-# 1. 인프라 기동 (MySQL 3307, Redis 16379, Kafka 9092)
+# 1. 인프라 기동 (MySQL 3307, Redis 16379, Kafka 9092, Prometheus 9090, Grafana 3000)
 docker compose up -d
 
 # 2. 애플리케이션 (Java 17 필요)
@@ -97,6 +98,7 @@ k6 run -e TOTAL_RATE=1000 -e DURATION=30s load-test/mixed-final.js
 
 - 관리자 시드 계정: `admin` / `admin1234!` (데모용 — `application.yml`)
 - 정산 실행: `POST /api/admin/settlements/run?month=2026-06` (ADMIN 토큰 필요)
+- 모니터링 대시보드: http://localhost:3000 (`admin` / `admin1234`) — 처리량·p95/p99·에러율·커넥션 풀·Kafka 리스너 패널 자동 프로비저닝
 
 ## 문서
 

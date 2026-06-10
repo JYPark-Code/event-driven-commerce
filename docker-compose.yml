@@ -61,6 +61,33 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── 모니터링 (Prometheus pull → Grafana 시각화) ──
+  # 앱은 호스트에서 돌므로 host.docker.internal로 /actuator/prometheus를 스크레이프한다.
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: tps-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: tps-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin1234
+    volumes:
+      # 데이터소스·대시보드를 코드로 프로비저닝 — 컨테이너를 지워도 클릭 설정 없이 재현된다
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
 volumes:
   mysql-data:
   redis-data:

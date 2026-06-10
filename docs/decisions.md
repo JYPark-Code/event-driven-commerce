@@ -203,6 +203,17 @@
 
 ---
 
+## 16. 모니터링: Prometheus pull + Grafana 프로비저닝 코드화 (선택 과제)
+- **수집: Micrometer → `/actuator/prometheus`를 Prometheus가 5초 간격 pull**
+  - **대안**: push 방식(StatsD, CloudWatch) — pull은 스크레이프 성공 여부로 타깃 생사가 같이 관측되고, 로컬 데모에 표준적. 앱은 호스트에서 돌므로 컨테이너의 Prometheus가 `host.docker.internal`로 접근.
+  - 스크레이프 5초: 부하 런이 30초 단위라 기본 15초로는 런 하나에 점이 2개뿐.
+- **Grafana 설정은 클릭이 아니라 코드(provisioning)로**: 데이터소스·대시보드를 yml/json으로 저장소에 둠 — 컨테이너를 지워도 `docker compose up`만으로 같은 화면이 재현된다. 포트폴리오는 "다시 띄우면 그대로 나온다"가 중요.
+- **`percentiles-histogram` 트레이드오프**: 서버측 p95/p99를 PromQL(`histogram_quantile`)로 계산하려면 버킷 노출이 필요(uri당 ~70 시계열). 단일 앱 데모 규모라 수용. **k6(클라이언트측) p95와 서버측 p95의 차이 = 서블릿 밖 큐잉** — 측정 1-a에서 수동으로 했던 병목 위치 분석이 대시보드로 상시화된다.
+- **대시보드 패널 선정 기준**: 부하테스트 중 봐야 하는 것만 — 처리량(uri별), p95/p99, 5xx 에러율, Hikari active/pending(풀 포화 신호), Kafka 리스너 처리율(컨슈머 랙 추세), JVM 힙. 예쁜 그래프 나열이 아니라 측정 1~4에서 실제로 확인했던 지표들.
+- **측정 원칙과의 관계**: 1-a 3차에서 측정 중 메트릭 폴링이 수치를 흔든 교훈이 있다 — benchmarks.md의 기존 수치는 모니터링 없이 측정한 값이므로, 이후 비교 측정 시 모니터링 가동 여부를 동일하게 맞출 것.
+
+---
+
 ## 앞으로 채울 결정들 (TODO)
 - [x] 캐시 무효화 전략 → 12번 (측정은 benchmarks.md 측정 2)
 - [x] RBAC 권한 모델 → 13번

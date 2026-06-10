@@ -86,6 +86,8 @@ com.jypark.tps1000
 | MySQL | mysql:8.0 | 3307 | 영속 저장소 (3306은 로컬 mysqld 점유로 회피) |
 | Redis | redis:7-alpine | 16379 | L2 캐시 / 세션 (AOF) — 6379는 Windows 예약 포트 범위라 회피 |
 | Kafka | apache/kafka:3.8.1 | 9092 | 비동기 메시징 (KRaft 단일 노드) |
+| Prometheus | prom/prometheus:v2.53.0 | 9090 | 메트릭 수집 — 호스트 앱의 /actuator/prometheus를 5초 간격 스크레이프 |
+| Grafana | grafana/grafana:11.1.0 | 3000 | 대시보드 — 데이터소스·패널을 코드로 프로비저닝 (monitoring/) |
 
 ## 실행 방법
 ```powershell
