@@ -56,6 +56,16 @@
   - **이유**: Zookeeper 제거로 컨테이너 1개로 Kafka 운영 → 데모 환경 단순화. 공식 이미지가 KRaft 스토리지 자동 포맷 지원.
   - **트레이드오프**: 단일 브로커라 복제·고가용성은 시연 불가(replication-factor=1). 데모 목적상 수용.
 
+## 5. 주문 도메인 최소 모델 + 동기 버전 우선 (축 1 — 1단계)
+
+- **맥락**: 축 1의 최종 목표는 동기 vs Kafka 비동기 비교 측정. 비교가 성립하려면 기준선(동기)이 먼저 필요.
+- **결정**: `Order(productId, quantity, status, createdAt)`만으로 시작. 상품 도메인과 FK 없이 `productId`만 보관. `POST /api/orders`는 저장 후 즉시 응답.
+- **이유**: (1) 비교 측정에 필요한 건 "주문 접수 경로의 처리량"이지 도메인 완성도가 아님. (2) 가격·재고·회원은 4축 어디에도 필수가 아니라 범위 폭발 요인. (3) 상태 enum(CREATED/COMPLETED/FAILED)은 비동기 버전의 컨슈머 확정·DLQ 흐름을 미리 고려한 것.
+- **트레이드오프**: 실제 이커머스 주문(금액 계산, 재고 차감)과 거리가 있음 → 면접에선 "측정 대상 경로만 남기고 단순화했다"로 설명.
+- **보안**: Spring Security가 클래스패스에 있어 기본 전체 잠금 → 임시 `SecurityConfig`로 `/api/**`, `/actuator/**` permitAll. 축 3에서 JWT + RBAC로 교체 예정.
+
+---
+
 ## 앞으로 채울 결정들 (TODO)
 - [ ] 주문 멱등성 보장 방식 (주문ID 기준 중복 방지 — DB 유니크 제약 vs Redis SETNX vs Kafka 키 기반)
 - [ ] 캐시 무효화 전략 (write-through vs invalidate-on-write, L1/L2 정합성, Cache Stampede 대응)
