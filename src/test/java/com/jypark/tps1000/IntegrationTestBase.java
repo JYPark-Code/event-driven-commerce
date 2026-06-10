@@ -2,6 +2,7 @@ package com.jypark.tps1000;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jypark.tps1000.order.OrderNotificationService;
+import com.jypark.tps1000.product.ProductRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,4 +29,8 @@ public abstract class IntegrationTestBase {
 
     @MockitoSpyBean
     protected OrderNotificationService notificationService;
+
+    /** 캐시 계층 테스트에서 DB 접근 횟수 검증용 (spy는 컨텍스트 분기 방지를 위해 여기에만 둔다). */
+    @MockitoSpyBean
+    protected ProductRepository productRepository;
 }
