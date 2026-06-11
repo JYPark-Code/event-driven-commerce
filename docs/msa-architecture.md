@@ -10,7 +10,8 @@
 | 1단계 | Gradle 멀티모듈 — 패키지 경계를 모듈 경계로 승격, common 해체 | ✅ (decisions 17) |
 | 2단계 | 정산→상품 컴파일 의존 해소 — `product.changed` 이벤트 기반 데이터 복제 | ✅ (decisions 18) |
 | 3a단계 | 서비스별 부트 앱 분리 (product 8081 / order 8082 / backoffice 8083) | ✅ (decisions 19) |
-| 3b단계 | DB 분리 (서비스별 스키마) — **정산→orders 데이터 결합 해소가 선행 조건** | 미착수 |
+| 3b-1단계 | 정산→orders 직접 SQL 해소 — order-service 월별 집계 내부 API로 전환 | ✅ (decisions 20) |
+| 3b-2단계 | DB 분리 (서비스별 스키마) | 미착수 |
 | 3c단계 | API 게이트웨이, 인증 구조 변경(RS256), 서비스별 관측 | 미착수 |
 
 ## 목표 아키텍처
@@ -51,7 +52,7 @@ flowchart TB
 
     PCACHE -. "L2" .-> REDIS[("Redis")]
 
-    BATCH -. "월별 집계 (3b 과제:<br/>orders 직접 SQL → ?)" .-> ODB
+    BATCH -- "월별 집계 내부 API<br/>(3b-1 ✅)" --> OS
 ```
 
 > 3a까지의 현재 상태는 위 그림에서 **게이트웨이가 없고(포트 직접 호출), DB가 아직 하나(tps1000 공유)**인 형태다.
@@ -70,9 +71,9 @@ flowchart TB
 
 ### ⬜ 남은 변경 (3b·3c단계)
 
-**1. 정산 → orders 데이터 결합 해소 (3b의 선행 조건, 최대 난관)**
+**1. 정산 → orders 데이터 결합 해소 (3b의 선행 조건, 최대 난관) — ✅ 해소됨 (decisions 20)**
 
-2단계에서 컴파일 의존은 product 하나였지만, **데이터 수준 결합이 하나 더 숨어 있다**: 정산 리더(`monthlyOrderAggregateReader`)가 `FROM orders` SQL로 order 도메인의 테이블을 직접 GROUP BY 집계한다. 단일 DB라 보이지 않던 결합으로, DB를 분리하는 순간 깨진다. 선택지:
+2단계에서 컴파일 의존은 product 하나였지만, **데이터 수준 결합이 하나 더 숨어 있었다**: 정산 리더(`monthlyOrderAggregateReader`)가 `FROM orders` SQL로 order 도메인의 테이블을 직접 GROUP BY 집계했다. 단일 DB라 보이지 않던 결합으로, DB를 분리하는 순간 깨진다. 검토했던 선택지:
 
 | 방안 | 장점 | 단점 |
 |---|---|---|
@@ -80,13 +81,13 @@ flowchart TB
 | (b) 주문 이벤트 복제 (order.created → backoffice 로컬 적재) | 정산 완전 독립 | **동기 주문은 이벤트를 발행하지 않아** 발행 지점 추가 필요 + 주문 전 건 복제는 볼륨 부담 |
 | (c) CDC (Debezium 등) | 코드 무변경 복제 | 인프라 추가 — 데모 범위 초과 |
 
-→ 정산 워크로드(월 1회, 집계 결과는 상품 수 규모)에는 **(a)가 적합**. 2단계의 상품 복제와 반대 선택인 이유: 상품은 "건별 다회 조회"(N+1), 주문은 "월 1회 집계"라 호출 패턴이 다르다. 같은 문제처럼 보여도 워크로드가 답을 가른다 — 면접 포인트.
+→ 정산 워크로드(월 1회, 집계 결과는 상품 수 규모)에는 **(a)가 적합**해서 그렇게 구현했다: order-service의 `GET /internal/orders/monthly-sales`(페이지 단위) + 정산 리더 `MonthlyOrderSalesReader`(HTTP). 2단계의 상품 복제와 반대 선택인 이유: 상품은 "건별 다회 조회"(N+1), 주문은 "월 1회 집계"라 호출 패턴이 다르다. 같은 문제처럼 보여도 워크로드가 답을 가른다 — 면접 포인트.
 
-**2. DB 분리 (3b)**
+**2. DB 분리 (3b-2)**
 
 - `tps1000` 단일 스키마 → `product` / `orders` / `backoffice` 스키마 3개 (docker-compose에 init 스크립트).
 - 테이블 소유: products → product DB / orders → order DB / users·settlements·product_replica·BATCH_* 메타 → backoffice DB.
-- 분리 후엔 크로스 스키마 조인·SQL이 물리적으로 불가능해진다 — 1번 과제가 선행되어야 하는 이유.
+- 분리 후엔 크로스 스키마 조인·SQL이 물리적으로 불가능해진다 — 1번 과제(✅)가 선행이었던 이유. 이제 백오피스 코드에 타 도메인 테이블 접근이 없어 스키마 분리가 가능해졌다.
 
 **3. API 게이트웨이 (3c)**
 

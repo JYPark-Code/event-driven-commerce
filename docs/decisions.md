@@ -264,6 +264,21 @@
 
 ---
 
+## 20. [msa 브랜치] MSA 3b-1단계: 정산→orders 직접 SQL을 order-service 월별 집계 API로 전환
+
+- **맥락**: 19번에서 발견한 두 번째 숨은 결합 — 정산 리더가 `FROM orders` SQL로 order 도메인 테이블을 직접 GROUP BY. DB 분리(3b-2)의 선행 조건.
+- **대안 비교** (msa-architecture.md): (a) 동기 집계 API / (b) 주문 이벤트 복제 / (c) CDC.
+- **선택: (a) 동기 집계 API** — 18번(상품 복제)과 **반대** 선택. 이유는 호출 패턴: 상품은 정산 행마다 조회(N+1 위험)라 복제가 맞고, 주문은 **월 1회 페이지 단위 집계**라 동기 호출 비용이 무시 가능하다. (b)는 동기 주문이 이벤트를 발행하지 않아 발행 지점 추가가 필요한 데다 주문 전 건 복제는 볼륨 부담. 같은 문제처럼 보여도 워크로드가 답을 가른다.
+- **구현 포인트**:
+  - **order-service**: `GET /internal/orders/monthly-sales?month=&page=&size=` — GROUP BY는 데이터 소유자가 DB에서 수행, FAILED 제외 정책(14번)도 소유자가 강제. product_id 정렬 고정으로 페이지 간 중복·누락 없는 안정 페이징. `/internal` 네임스페이스로 비공개 API임을 표시(데모는 공개, 운영이면 내부망/서비스 간 인증).
+  - **backoffice**: `MonthlyOrderSalesReader`(ItemReader)가 RestClient로 페이지 단위 호출. 응답은 backoffice 소유 `ProductSales`로 역직렬화 — 18번과 같은 "클래스 공유 없는 JSON 계약".
+  - **재시작 안전성 트레이드오프**: JdbcPagingItemReader와 달리 ExecutionContext 미저장 — 정산 잡은 clear 스텝 덕에 처음부터 재실행이 멱등(14번)이라 중간 재개가 불필요.
+  - **테스트 하네스 변화**: 조합 앱 통합 테스트가 MOCK 환경에선 HTTP 자기 호출이 불가 → `RANDOM_PORT`로 전환하고 order-service URL을 런타임 포트로 치환. MockMvc는 RANDOM_PORT에서도 동작해 기존 테스트 25개 무수정 통과.
+- **새 트레이드오프**: 정산 실행이 order-service 가용성에 결합된다(월 배치라 재시도로 흡수 가능). Tomcat 기본 응답이 페이지 크기 100 × 상품 수 규모라 페이로드 부담 없음.
+- **검증**: 통합 테스트 25개 통과 + 분리 앱 3개 E2E — backoffice-app(8083)의 정산이 order-app(8082) 집계 API를 **프로세스 간 HTTP로 호출**해 정확한 정산 행 생성(수량·금액 일치). 백오피스 코드에서 타 도메인 테이블 접근이 0이 되어 3b-2(스키마 분리)가 가능해졌다.
+
+---
+
 ## 앞으로 채울 결정들 (TODO)
 - [x] 캐시 무효화 전략 → 12번 (측정은 benchmarks.md 측정 2)
 - [x] RBAC 권한 모델 → 13번

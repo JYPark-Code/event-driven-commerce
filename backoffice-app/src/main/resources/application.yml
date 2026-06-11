@@ -41,6 +41,9 @@ backoffice:
   admin:
     username: admin
     password: admin1234!
+  order-service:
+    # 정산 리더의 월별 집계 API 주소 (MSA 3b) — order-app
+    url: http://localhost:8082
 
 server:
   port: 8083

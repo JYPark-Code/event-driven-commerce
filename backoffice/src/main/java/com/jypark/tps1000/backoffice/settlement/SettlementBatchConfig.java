@@ -8,22 +8,16 @@ import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.data.RepositoryItemWriter;
 import org.springframework.batch.item.data.builder.RepositoryItemWriterBuilder;
-import org.springframework.batch.item.database.JdbcPagingItemReader;
-import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
-import org.springframework.batch.item.database.support.MySqlPagingQueryProvider;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
-
-import javax.sql.DataSource;
-import java.time.LocalDateTime;
-import java.time.YearMonth;
-import java.util.Map;
+import org.springframework.web.client.RestClient;
 
 /**
  * 월별 정산 잡 (축 3 — Spring Batch).
@@ -31,11 +25,12 @@ import java.util.Map;
  * 구조: clearStep(해당 월 기존 정산 삭제) → aggregateStep(orders 집계 → settlements 적재).
  * 같은 달 재실행 = 덮어쓰기(delete 후 재집계)라 잡 전체가 멱등.
  *
- * 집계는 DB(GROUP BY)에 맡긴다 — 주문 수백만 행을 애플리케이션으로 끌어와 합산하는 대신,
- * 리더가 받는 행 수를 "상품 수"로 줄인다. 청크 크기 등 결정 근거는 docs/decisions.md 14번.
+ * 집계는 데이터 소유자인 order-service가 DB GROUP BY로 수행하고(내부 API), 리더는 그 결과를
+ * 페이지 단위로 받는다 — 입력 행 수는 "상품 수" 규모 그대로 (청크 근거는 docs/decisions.md 14번).
  *
- * 상품 정보는 product 모듈이 아니라 이벤트로 복제된 로컬 ProductReplica에서 읽는다
- * (MSA 2단계 — 도메인 간 직접 의존 해소, decisions.md 18번).
+ * 다른 도메인 데이터 접근 경로 (MSA 2단계·3b — 직접 의존 해소):
+ *  - 주문 집계: order-service 내부 API 호출 (월 1회 호출 패턴 — decisions.md 20번)
+ *  - 상품 정보: 이벤트로 복제된 로컬 ProductReplica (건별 다회 조회 패턴 — decisions.md 18번)
  */
 @Configuration
 public class SettlementBatchConfig {
@@ -71,46 +66,27 @@ public class SettlementBatchConfig {
     @Bean
     public Step aggregateSettlementStep(JobRepository jobRepository,
                                         PlatformTransactionManager transactionManager,
-                                        JdbcPagingItemReader<ProductSales> monthlyOrderAggregateReader,
+                                        ItemReader<ProductSales> monthlyOrderSalesReader,
                                         ItemProcessor<ProductSales, Settlement> settlementItemProcessor,
                                         RepositoryItemWriter<Settlement> settlementWriter) {
         return new StepBuilder("aggregateSettlementStep", jobRepository)
                 .<ProductSales, Settlement>chunk(CHUNK_SIZE, transactionManager)
-                .reader(monthlyOrderAggregateReader)
+                .reader(monthlyOrderSalesReader)
                 .processor(settlementItemProcessor)
                 .writer(settlementWriter)
                 .build();
     }
 
     /**
-     * 해당 월 주문을 상품별로 GROUP BY 집계해 페이징으로 읽는다 (sort key = product_id).
-     * FAILED 주문만 제외 — CREATED는 접수된 유효 주문이므로 포함 (decisions.md 14번).
+     * order-service 내부 API에서 해당 월 상품별 집계를 페이지 단위로 읽는다 (MSA 3b — FROM orders 직접 SQL 대체).
+     * FAILED 제외 기준은 데이터 소유자(order-service)가 강제한다.
      */
     @Bean
     @StepScope
-    public JdbcPagingItemReader<ProductSales> monthlyOrderAggregateReader(
-            DataSource dataSource,
-            @Value("#{jobParameters['month']}") String month) {
-        YearMonth yearMonth = YearMonth.parse(month);
-        LocalDateTime start = yearMonth.atDay(1).atStartOfDay();
-        LocalDateTime end = yearMonth.plusMonths(1).atDay(1).atStartOfDay();
-
-        MySqlPagingQueryProvider queryProvider = new MySqlPagingQueryProvider();
-        queryProvider.setSelectClause("product_id, SUM(quantity) AS total_quantity");
-        queryProvider.setFromClause("FROM orders");
-        queryProvider.setWhereClause("WHERE created_at >= :start AND created_at < :end AND status <> 'FAILED'");
-        queryProvider.setGroupClause("product_id");
-        queryProvider.setSortKeys(Map.of("product_id", org.springframework.batch.item.database.Order.ASCENDING));
-
-        return new JdbcPagingItemReaderBuilder<ProductSales>()
-                .name("monthlyOrderAggregateReader")
-                .dataSource(dataSource)
-                .queryProvider(queryProvider)
-                .parameterValues(Map.of("start", start, "end", end))
-                .pageSize(CHUNK_SIZE)
-                .rowMapper((rs, rowNum) ->
-                        new ProductSales(rs.getLong("product_id"), rs.getLong("total_quantity")))
-                .build();
+    public ItemReader<ProductSales> monthlyOrderSalesReader(
+            @Value("#{jobParameters['month']}") String month,
+            @Value("${backoffice.order-service.url}") String orderServiceUrl) {
+        return new MonthlyOrderSalesReader(RestClient.create(orderServiceUrl), month);
     }
 
     /** 수량 합에 정산 시점 단가(복제본)를 곱해 정산 행으로 변환. 복제본에 없으면(이벤트 미수신·삭제) null 반환 → 스킵. */

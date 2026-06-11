@@ -60,6 +60,9 @@ backoffice:
     # ADMIN 시드 계정 (AdminAccountInitializer). 가입 API로는 USER만 생성 가능.
     username: admin
     password: admin1234!
+  order-service:
+    # 정산 리더의 월별 집계 API 주소 (MSA 3b). 조합 앱은 order 도메인이 같은 프로세스라 자기 자신.
+    url: http://localhost:8080
 
 server:
   port: 8080
