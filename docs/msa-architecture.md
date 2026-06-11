@@ -12,13 +12,13 @@
 | 3a단계 | 서비스별 부트 앱 분리 (product 8081 / order 8082 / backoffice 8083) | ✅ (decisions 19) |
 | 3b-1단계 | 정산→orders 직접 SQL 해소 — order-service 월별 집계 내부 API로 전환 | ✅ (decisions 20) |
 | 3b-2단계 | DB 분리 — 서비스별 스키마(tps_product·tps_order·tps_backoffice) + 컨슈머 그룹 분리 | ✅ (decisions 21) |
-| 3c단계 | API 게이트웨이, 인증 구조 변경(RS256), 서비스별 관측 | 미착수 |
+| 3c단계 | API 게이트웨이(:8080, Spring Cloud Gateway) ✅ · RS256은 불필요 판단 · 관측 확장은 범위 밖 명시 | ✅ (decisions 22) |
 
 ## 목표 아키텍처
 
 ```mermaid
 flowchart TB
-    Client([Client]) --> GW["API Gateway<br/>(3c — 미구현)"]
+    Client([Client]) --> GW["API Gateway :8080<br/>(gateway-app, Spring Cloud Gateway)"]
 
     GW -- "/api/products/**" --> PS
     GW -- "/api/orders/**" --> OS
@@ -55,9 +55,10 @@ flowchart TB
     BATCH -- "월별 집계 내부 API<br/>(3b-1 ✅)" --> OS
 ```
 
-> 3b-2까지 완료된 현재, 위 그림에서 남은 것은 **게이트웨이(3c)뿐**이다 — 클라이언트가 포트 3개를 직접 호출한다.
-> DB는 서비스별 스키마로 분리됐고(같은 MySQL 인스턴스 — 로컬 데모 한계, 운영이면 인스턴스도 분리),
-> 조합 앱(app, 테스트 하네스)과 main(모놀리스)은 기존 tps1000 단일 스키마를 그대로 쓴다.
+> 위 그림이 곧 현재 상태다 (3c까지 완료). DB는 서비스별 스키마로 분리됐고(같은 MySQL 인스턴스 —
+> 로컬 데모 한계, 운영이면 인스턴스도 분리), 조합 앱(app, 테스트 하네스)과 main(모놀리스)은
+> 기존 tps1000 단일 스키마를 그대로 쓴다. 게이트웨이는 모놀리스와 같은 :8080 — 클라이언트
+> 인터페이스가 전환 전후 동일하다.
 
 ## 바꿔야 할 구조 목록
 
@@ -90,18 +91,19 @@ flowchart TB
 - 테이블 소유 확인됨: products → tps_product / orders → tps_order / users·settlements·product_replica·BATCH_* 메타 → tps_backoffice.
 - 함께 드러난 결함: **컨슈머 그룹을 배포 단위(DB)마다 분리**해야 한다 — 하네스와 분리 앱이 그룹을 공유하면 경쟁 소비로 한쪽 데이터에 구멍이 난다(3b-2 작업 중 실제 발생). 복제본은 새 그룹 + earliest로 토픽 재생해 새 스키마에 재구축했다.
 
-**3. API 게이트웨이 (3c)**
+**3. API 게이트웨이 (3c) — ✅ 완료 (decisions 22)**
 
-- 클라이언트가 포트 3개를 알 필요가 없도록 단일 진입점 (Spring Cloud Gateway 또는 nginx).
-- 경로 라우팅: `/api/products/**`→8081, `/api/orders/**`→8082, `/api/auth/**`·`/api/admin/**`→8083.
-- 부하테스트(k6) 시나리오의 타깃도 게이트웨이로 일원화 — 단, 게이트웨이 홉이 측정 수치에 들어가므로 main 수치와 직접 비교 불가(별도 베이스라인 필요).
+- `gateway-app`(:8080, Spring Cloud Gateway) — 클라이언트 단일 진입점, 모놀리스와 동일 포트라 클라이언트 인터페이스 불변.
+- 경로 라우팅(Java DSL): `/api/products/**`→8081, `/api/orders/**`→8082, `/api/auth/**`·`/api/admin/**`→8083.
+- **`/internal/**`은 비라우팅** — 서비스 간 내부 API가 외부 진입점에서 404. 단 로컬 데모는 서비스 포트가 호스트에 직접 열려 있어 우회 가능(운영이면 내부망 바인딩).
+- 부하테스트(k6) 시나리오의 타깃을 게이트웨이로 일원화할 수 있다 — 단, 게이트웨이 홉이 측정 수치에 들어가므로 main 수치와 직접 비교 불가(별도 베이스라인 필요, 미측정).
 
-**4. 인증 구조 (3c)**
+**4. 인증 구조 (3c) — 판단 완료: HS256 유지 (decisions 22)**
 
-- 현재 HS256 대칭키는 발급자(backoffice)와 검증자(backoffice)가 같아서 성립. 보호 자원이 backoffice에만 있는 현 구조에서는 **분리 후에도 HS256으로 충분**하다.
+- 현재 HS256 대칭키는 발급자(backoffice)와 검증자(backoffice)가 같아서 성립. 보호 자원이 backoffice에만 있는 현 구조에서는 **분리 후에도 HS256으로 충분**하다. 게이트웨이도 토큰을 검증하지 않고 통과시킨다(인가 책임은 backoffice 한곳 유지 — 401/403 분리 설계 그대로 경유 동작 확인).
 - RS256(공개키 검증)이 필요해지는 시점: 다른 서비스(예: 주문에 회원 인증 도입)나 게이트웨이가 토큰을 검증하게 될 때 — 비밀키 공유 없이 공개키만 배포하면 된다. decisions 13의 "전환 지점" 그대로.
 
-**5. 관측·운영 (3c, 데모 범위 밖 명시)**
+**5. 관측·운영 (3c, 데모 범위 밖 명시 — 전환 단계는 여기서 종료)**
 
 - Prometheus 스크레이프 타깃 3개로 확장, 대시보드의 서비스 라벨 분리 (현재 monitoring/은 :8080 단일 타깃).
 - 분산 추적(traceparent 전파), 서비스별 로그 상관관계 — 이벤트 흐름이 서비스를 넘나들기 시작하면 필요. 데모에선 문서화만.
@@ -113,8 +115,21 @@ flowchart TB
 product/          도메인 라이브러리 (캐시 계층 포함)
 order/            도메인 라이브러리 (Kafka 컨슈머 포함)
 backoffice/       도메인 라이브러리 (RBAC·배치·복제본 포함)
-product-app/      :8081 부트 앱 = product만 탑재
-order-app/        :8082 부트 앱 = order만 탑재
-backoffice-app/   :8083 부트 앱 = backoffice만 탑재
-app/              :8080 조합 앱 — 통합 테스트 하네스 (전 도메인 단일 컨텍스트, decisions 19)
+product-app/      :8081 부트 앱 = product만 탑재 (DB: tps_product)
+order-app/        :8082 부트 앱 = order만 탑재 (DB: tps_order)
+backoffice-app/   :8083 부트 앱 = backoffice만 탑재 (DB: tps_backoffice)
+gateway-app/      :8080 API 게이트웨이 (Spring Cloud Gateway) — 클라이언트 단일 진입점
+app/              :8080 조합 앱 — 통합 테스트 하네스 (전 도메인 단일 컨텍스트·tps1000, decisions 19)
+                  ※ 게이트웨이와 같은 포트라 동시 기동 불가 (역할상 동시에 쓸 일 없음)
+```
+
+## 분리 환경 실행 순서
+
+```bash
+docker compose up -d          # 인프라 (기존 볼륨이면 docker/mysql-init 1회 수동 적용)
+./gradlew assemble
+java -jar product-app/build/libs/product-app-0.0.1-SNAPSHOT.jar     # :8081
+java -jar order-app/build/libs/order-app-0.0.1-SNAPSHOT.jar         # :8082
+java -jar backoffice-app/build/libs/backoffice-app-0.0.1-SNAPSHOT.jar  # :8083
+java -jar gateway-app/build/libs/gateway-app-0.0.1-SNAPSHOT.jar     # :8080 — 이후 모든 호출은 8080으로
 ```

@@ -5,8 +5,9 @@ include 'product'
 include 'order'
 include 'backoffice'
 
-// 실행 단위: 서비스별 부트 앱 (MSA 3a) + 조합 앱(테스트 하네스)
+// 실행 단위: 서비스별 부트 앱 (MSA 3a) + 게이트웨이 (3c) + 조합 앱(테스트 하네스)
 include 'product-app'
 include 'order-app'
 include 'backoffice-app'
+include 'gateway-app'
 include 'app'

@@ -1,0 +1,19 @@
+# API 게이트웨이 (MSA 3c). 라우팅 규칙은 GatewayRoutesConfig(Java DSL).
+spring:
+  application:
+    name: gateway
+
+# 서비스 주소 — 로컬 고정 포트 (서비스 디스커버리는 데모 범위 밖, docs/msa-architecture.md)
+gateway:
+  product-url: http://localhost:8081
+  order-url: http://localhost:8082
+  backoffice-url: http://localhost:8083
+
+server:
+  port: 8080  # 모놀리스와 동일 — 클라이언트 인터페이스 불변 (조합 앱과 동시 기동 불가)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
