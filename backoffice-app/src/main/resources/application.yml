@@ -1,0 +1,52 @@
+# backoffice-service. 3a 단계라 DB·Kafka는 아직 공유 인프라 — DB 분리는 3b (docs/msa-architecture.md).
+# 주의: 정산 리더가 orders 테이블을 직접 SQL 집계한다 — 공유 DB라 동작하지만 3b의 선행 해소 과제.
+spring:
+  application:
+    name: backoffice-service
+
+  datasource:
+    url: jdbc:mysql://localhost:3307/tps1000?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
+    username: tps
+    password: tps1234
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    show-sql: false
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      # 복제 리스너는 전용 팩토리(String 역직렬화)를 쓰고 groupId도 어노테이션에서 지정한다.
+      # 여기는 부트스트랩 주소와 오프셋 정책만 — earliest라 새로 배포돼도 토픽 처음부터 복제.
+      group-id: tps1000-backoffice
+      auto-offset-reset: earliest
+
+  batch:
+    job:
+      enabled: false
+    jdbc:
+      initialize-schema: always
+
+jwt:
+  # 데모용 고정 키. 발급자=검증자(이 서비스)라 분리 후에도 HS256으로 충분 — RS256 전환 시점은 docs/msa-architecture.md 4번.
+  secret: tps1000-demo-jwt-secret-key-do-not-use-in-production-0123456789
+  expiry-seconds: 3600
+
+backoffice:
+  admin:
+    username: admin
+    password: admin1234!
+
+server:
+  port: 8083
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

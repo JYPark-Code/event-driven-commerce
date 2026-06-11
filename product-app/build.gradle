@@ -1,0 +1,9 @@
+// product-service (:8081) — 상품 + 조회 캐시 계층만 탑재한 부트 앱 (MSA 3a).
+apply plugin: 'org.springframework.boot'
+
+dependencies {
+	implementation project(':product')
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+	runtimeOnly 'com.mysql:mysql-connector-j'
+}
