@@ -1,13 +1,12 @@
 // 백오피스 — JWT/RBAC + 월별 정산 배치 (축 3).
+// 도메인 모듈 의존 없음: 정산의 상품 정보는 product.changed 이벤트로 복제된 로컬 테이블에서 읽는다 (decisions.md 18번).
 dependencies {
-	// 정산 프로세서의 상품 단가 조회 — 유일한 도메인 간 결합. MSA 2단계에서 API/이벤트로 해소할 지점 (decisions.md 17번).
-	implementation project(':product')
-
 	implementation 'org.springframework.boot:spring-boot-starter-batch'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.kafka:spring-kafka'
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'

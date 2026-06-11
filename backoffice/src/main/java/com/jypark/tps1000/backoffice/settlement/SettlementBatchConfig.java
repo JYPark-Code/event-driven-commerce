@@ -1,6 +1,5 @@
 package com.jypark.tps1000.backoffice.settlement;
 
-import com.jypark.tps1000.product.ProductRepository;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.StepScope;
@@ -34,6 +33,9 @@ import java.util.Map;
  *
  * 집계는 DB(GROUP BY)에 맡긴다 — 주문 수백만 행을 애플리케이션으로 끌어와 합산하는 대신,
  * 리더가 받는 행 수를 "상품 수"로 줄인다. 청크 크기 등 결정 근거는 docs/decisions.md 14번.
+ *
+ * 상품 정보는 product 모듈이 아니라 이벤트로 복제된 로컬 ProductReplica에서 읽는다
+ * (MSA 2단계 — 도메인 간 직접 의존 해소, decisions.md 18번).
  */
 @Configuration
 public class SettlementBatchConfig {
@@ -111,15 +113,15 @@ public class SettlementBatchConfig {
                 .build();
     }
 
-    /** 수량 합에 정산 시점 단가를 곱해 정산 행으로 변환. 상품이 없으면(삭제 등) null 반환 → 스킵. */
+    /** 수량 합에 정산 시점 단가(복제본)를 곱해 정산 행으로 변환. 복제본에 없으면(이벤트 미수신·삭제) null 반환 → 스킵. */
     @Bean
     @StepScope
     public ItemProcessor<ProductSales, Settlement> settlementItemProcessor(
-            ProductRepository productRepository,
+            ProductReplicaRepository replicaRepository,
             @Value("#{jobParameters['month']}") String month) {
-        return sales -> productRepository.findById(sales.productId())
-                .map(product -> Settlement.of(month, product.getId(), product.getName(),
-                        sales.totalQuantity(), product.getPrice() * sales.totalQuantity()))
+        return sales -> replicaRepository.findById(sales.productId())
+                .map(replica -> Settlement.of(month, replica.getProductId(), replica.getName(),
+                        sales.totalQuantity(), replica.getPrice() * sales.totalQuantity()))
                 .orElse(null);
     }
 
