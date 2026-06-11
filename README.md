@@ -18,6 +18,9 @@
 > 부하기(k6)·앱·Docker가 같은 머신에서 동작한 측정 — 절대값보다 구성 간 상대 비교가 목적입니다.
 > 방법론과 한계는 [benchmarks.md](docs/benchmarks.md) 참고.
 
+> **MSA 전환 버전**: main은 위 수치를 측정한 모놀리스 그대로 보존합니다.
+> 도메인 경계를 Gradle 멀티모듈로 승격하는 MSA 단계 전환은 `msa` 브랜치에서 진행합니다 (`git switch msa`) — 결정 근거는 해당 브랜치의 decisions.md 17번.
+
 ## 4개 핵심 축
 
 1. **주문 처리 — 동기 vs Kafka 비동기**
