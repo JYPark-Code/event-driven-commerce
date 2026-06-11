@@ -22,6 +22,9 @@ services:
       retries: 10
     volumes:
       - mysql-data:/var/lib/mysql
+      # MSA 서비스별 스키마(tps_product·tps_order·tps_backoffice) 생성 — 새 볼륨 초기화 시에만 실행됨.
+      # 기존 볼륨이면 스크립트 상단의 docker exec 명령으로 1회 수동 적용.
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
 
   redis:
     image: redis:7-alpine

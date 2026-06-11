@@ -1,10 +1,11 @@
-# order-service. 3a 단계라 DB·Kafka는 아직 공유 인프라 — DB 분리는 3b (docs/msa-architecture.md).
+# order-service. DB는 서비스 소유 스키마(tps_order, 3b-2) — 정산은 이 스키마를 직접 읽지 못하고
+# 내부 집계 API(3b-1)로만 접근한다.
 spring:
   application:
     name: order-service
 
   datasource:
-    url: jdbc:mysql://localhost:3307/tps1000?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
+    url: jdbc:mysql://localhost:3307/tps_order?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
     username: tps
     password: tps1234
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -23,7 +24,9 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
     consumer:
-      group-id: tps1000
+      # 조합 하네스(app, group=tps1000)와 그룹 분리 — 공유하면 경쟁 소비로 주문이 두 DB에 쪼개진다.
+      # 새 그룹 + earliest = 첫 기동 시 토픽 재생으로 과거 비동기 주문이 tps_order에 적재됨(멱등 INSERT IGNORE).
+      group-id: order-service
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer

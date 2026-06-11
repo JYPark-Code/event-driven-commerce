@@ -63,6 +63,9 @@ backoffice:
   order-service:
     # 정산 리더의 월별 집계 API 주소 (MSA 3b). 조합 앱은 order 도메인이 같은 프로세스라 자기 자신.
     url: http://localhost:8080
+  # 조합 하네스 전용 복제 컨슈머 그룹 — 분리 앱(backoffice-app)과 공유하면 경쟁 소비로
+  # 한쪽 복제본에 구멍이 난다 (ProductReplicaConsumer 주석, decisions.md 21번).
+  replica-consumer-group: tps1000-replica-harness
 
 server:
   port: 8080

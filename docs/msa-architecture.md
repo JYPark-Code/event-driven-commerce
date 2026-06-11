@@ -11,7 +11,7 @@
 | 2단계 | 정산→상품 컴파일 의존 해소 — `product.changed` 이벤트 기반 데이터 복제 | ✅ (decisions 18) |
 | 3a단계 | 서비스별 부트 앱 분리 (product 8081 / order 8082 / backoffice 8083) | ✅ (decisions 19) |
 | 3b-1단계 | 정산→orders 직접 SQL 해소 — order-service 월별 집계 내부 API로 전환 | ✅ (decisions 20) |
-| 3b-2단계 | DB 분리 (서비스별 스키마) | 미착수 |
+| 3b-2단계 | DB 분리 — 서비스별 스키마(tps_product·tps_order·tps_backoffice) + 컨슈머 그룹 분리 | ✅ (decisions 21) |
 | 3c단계 | API 게이트웨이, 인증 구조 변경(RS256), 서비스별 관측 | 미착수 |
 
 ## 목표 아키텍처
@@ -55,8 +55,9 @@ flowchart TB
     BATCH -- "월별 집계 내부 API<br/>(3b-1 ✅)" --> OS
 ```
 
-> 3a까지의 현재 상태는 위 그림에서 **게이트웨이가 없고(포트 직접 호출), DB가 아직 하나(tps1000 공유)**인 형태다.
-> 점선(정산→order DB)이 남은 가장 큰 구조 문제다 — 아래 참고.
+> 3b-2까지 완료된 현재, 위 그림에서 남은 것은 **게이트웨이(3c)뿐**이다 — 클라이언트가 포트 3개를 직접 호출한다.
+> DB는 서비스별 스키마로 분리됐고(같은 MySQL 인스턴스 — 로컬 데모 한계, 운영이면 인스턴스도 분리),
+> 조합 앱(app, 테스트 하네스)과 main(모놀리스)은 기존 tps1000 단일 스키마를 그대로 쓴다.
 
 ## 바꿔야 할 구조 목록
 
@@ -83,11 +84,11 @@ flowchart TB
 
 → 정산 워크로드(월 1회, 집계 결과는 상품 수 규모)에는 **(a)가 적합**해서 그렇게 구현했다: order-service의 `GET /internal/orders/monthly-sales`(페이지 단위) + 정산 리더 `MonthlyOrderSalesReader`(HTTP). 2단계의 상품 복제와 반대 선택인 이유: 상품은 "건별 다회 조회"(N+1), 주문은 "월 1회 집계"라 호출 패턴이 다르다. 같은 문제처럼 보여도 워크로드가 답을 가른다 — 면접 포인트.
 
-**2. DB 분리 (3b-2)**
+**2. DB 분리 (3b-2) — ✅ 완료 (decisions 21)**
 
-- `tps1000` 단일 스키마 → `product` / `orders` / `backoffice` 스키마 3개 (docker-compose에 init 스크립트).
-- 테이블 소유: products → product DB / orders → order DB / users·settlements·product_replica·BATCH_* 메타 → backoffice DB.
-- 분리 후엔 크로스 스키마 조인·SQL이 물리적으로 불가능해진다 — 1번 과제(✅)가 선행이었던 이유. 이제 백오피스 코드에 타 도메인 테이블 접근이 없어 스키마 분리가 가능해졌다.
+- `tps1000` 단일 스키마 → `tps_product` / `tps_order` / `tps_backoffice` 3개 (docker/mysql-init, 기존 볼륨은 1회 수동 적용).
+- 테이블 소유 확인됨: products → tps_product / orders → tps_order / users·settlements·product_replica·BATCH_* 메타 → tps_backoffice.
+- 함께 드러난 결함: **컨슈머 그룹을 배포 단위(DB)마다 분리**해야 한다 — 하네스와 분리 앱이 그룹을 공유하면 경쟁 소비로 한쪽 데이터에 구멍이 난다(3b-2 작업 중 실제 발생). 복제본은 새 그룹 + earliest로 토픽 재생해 새 스키마에 재구축했다.
 
 **3. API 게이트웨이 (3c)**
 

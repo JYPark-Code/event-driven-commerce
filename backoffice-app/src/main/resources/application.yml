@@ -1,11 +1,12 @@
-# backoffice-service. 3a 단계라 DB·Kafka는 아직 공유 인프라 — DB 분리는 3b (docs/msa-architecture.md).
-# 주의: 정산 리더가 orders 테이블을 직접 SQL 집계한다 — 공유 DB라 동작하지만 3b의 선행 해소 과제.
+# backoffice-service. DB는 서비스 소유 스키마(tps_backoffice, 3b-2) — users·settlements·
+# product_replica·BATCH_* 메타가 여기 산다. 타 도메인 데이터는 이벤트 복제(상품)와
+# 내부 API(주문 집계)로만 접근 — 크로스 스키마 SQL 없음.
 spring:
   application:
     name: backoffice-service
 
   datasource:
-    url: jdbc:mysql://localhost:3307/tps1000?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
+    url: jdbc:mysql://localhost:3307/tps_backoffice?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
     username: tps
     password: tps1234
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -41,6 +42,9 @@ backoffice:
   admin:
     username: admin
     password: admin1234!
+  # 복제 컨슈머 그룹 — 배포 단위(DB)마다 분리해야 경쟁 소비가 없다 (ProductReplicaConsumer 주석).
+  # 그룹 이름 변경 = 토픽 재생으로 복제본 재구축.
+  replica-consumer-group: backoffice-product-replica
   order-service:
     # 정산 리더의 월별 집계 API 주소 (MSA 3b) — order-app
     url: http://localhost:8082
