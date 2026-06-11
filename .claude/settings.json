@@ -1,0 +1,13 @@
+{
+  "env": {
+    "JAVA_HOME": "C:\\Program Files\\Amazon Corretto\\jdk17.0.14_7"
+  },
+  "permissions": {
+    "allow": [
+      "PowerShell($env:JAVA_HOME='C:\\\\Program Files\\\\Amazon Corretto\\\\jdk17.0.14_7'; .\\\\gradlew.bat assemble *)",
+      "PowerShell($env:JAVA_HOME='C:\\\\Program Files\\\\Amazon Corretto\\\\jdk17.0.14_7'; .\\\\gradlew.bat test *)",
+      "PowerShell(.\\\\gradlew.bat assemble *)",
+      "PowerShell(.\\\\gradlew.bat test *)"
+    ]
+  }
+}

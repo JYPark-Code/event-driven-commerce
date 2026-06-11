@@ -36,6 +36,10 @@ out/
 ### VS Code ###
 .vscode/
 
+### Claude Code ###
+# settings.json(팀 공유: env·permissions)은 커밋, local(개인 승인 이력)은 제외
+.claude/settings.local.json
+
 ### Project ###
 bootrun.log
 app.log
