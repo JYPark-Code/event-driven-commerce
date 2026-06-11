@@ -1,9 +1,13 @@
-# Event-Driven Commerce — 1000 TPS 실증 포트폴리오
+# Event-Driven Commerce — 1000 TPS 실증 포트폴리오 (msa 브랜치)
 
 > 이력서에 적은 백엔드 역량(Kafka 비동기 처리, 캐시 계층화, RBAC/Batch, 고부하 처리)을
 > **직접 구현하고, 부하를 걸어 측정하고, 그 근거를 문서로 남긴** 데모 시스템입니다.
 > 완성품 이커머스가 아니라 핵심 기술 포인트를 실증하는 것이 목적이며,
 > 모든 설계의 "왜"는 [docs/decisions.md](docs/decisions.md), 모든 수치는 [docs/benchmarks.md](docs/benchmarks.md)에 있습니다.
+
+> **이 브랜치(msa)는 main의 모놀리스를 단계적으로 MSA 구조로 전환한 버전입니다.**
+> Gradle 멀티모듈 → 이벤트 기반 데이터 복제 → 서비스별 앱 분리 → 내부 API 전환 → DB 분리 → API 게이트웨이까지 6단계 완료.
+> main은 아래 수치를 측정한 모놀리스를 그대로 보존합니다 (측정 기준). 전환 과정 전체는 [docs/msa-architecture.md](docs/msa-architecture.md)와 decisions.md 17~22번.
 
 ## 핵심 결과 (요약)
 
@@ -16,6 +20,7 @@
 | 데이터 정합성 (전 측정 누적) | 주문 중복 **0**, 미처리 **0** (멱등 키 + DB 유니크 제약) |
 
 > 부하기(k6)·앱·Docker가 같은 머신에서 동작한 측정 — 절대값보다 구성 간 상대 비교가 목적입니다.
+> 수치는 모놀리스 구성(main) 기준이며, 게이트웨이 홉이 추가된 MSA 구성은 별도 베이스라인이 필요해 재측정하지 않았습니다.
 > 방법론과 한계는 [benchmarks.md](docs/benchmarks.md) 참고.
 
 ## 4개 핵심 축
@@ -32,50 +37,89 @@
    오픈 모델(constant-arrival-rate)로 coordinated omission 회피, 워밍업 절차 고정, 스레드 풀 튜닝 실험 포함.
    측정 시나리오는 [load-test/](load-test/), 전체 수치는 [benchmarks.md](docs/benchmarks.md).
 
+## MSA 전환 (이 브랜치)
+
+모놀리스에서 출발해 **돌아가는 상태를 유지하며** 한 번에 한 결합씩 끊었습니다. 각 단계의 결정 근거와 대안 비교는 decisions.md 17~22번.
+
+| 단계 | 내용 | 근거 |
+|---|---|---|
+| 1 | Gradle 멀티모듈 — 패키지 관례였던 도메인 경계를 모듈 경계로 승격 (위반 = 컴파일 에러), common 해체 | decisions 17 |
+| 2 | 정산→상품 컴파일 의존 해소 — `product.changed` 이벤트 → 로컬 `product_replica` 복제 (JSON 계약, 클래스 공유 없음) | decisions 18 |
+| 3a | 서비스별 부트 앱 분리 — product :8081 / order :8082 / backoffice :8083, 조합 앱(`app`)은 테스트 하네스로 유지 | decisions 19 |
+| 3b-1 | 정산의 `FROM orders` 직접 SQL(숨은 데이터 결합) 해소 — order-service 월별 집계 내부 API로 전환 | decisions 20 |
+| 3b-2 | DB 분리 — 서비스별 스키마(`tps_product`·`tps_order`·`tps_backoffice`) + 컨슈머 그룹 분리 | decisions 21 |
+| 3c | API 게이트웨이(`gateway-app` :8080, Spring Cloud Gateway) — 모놀리스와 동일 포트, 클라이언트 인터페이스 불변 | decisions 22 |
+
+전환에서 나온 면접 포인트 몇 가지:
+
+- **같은 결합도 워크로드가 답을 가른다** — 상품(건별 다회 조회)은 이벤트 복제, 주문 집계(월 1회)는 동기 내부 API. 반대 선택의 이유가 각각 있다 (decisions 18·20).
+- **단일 DB가 숨기고 있던 결합** — 컴파일 의존을 다 끊은 뒤에도 정산이 `FROM orders`로 타 도메인 테이블을 직접 집계하고 있었다. DB를 분리하는 순간 깨지는 종류의 결합 (decisions 20).
+- **컨슈머 그룹은 배포 단위(DB)마다 분리** — 하네스와 분리 앱이 그룹을 공유하면 경쟁 소비로 주문이 두 DB에 쪼개진다 (3b-2 작업 중 실제 발생, decisions 21). 복제본은 새 그룹 + earliest로 토픽을 재생해 재구축.
+- **`/internal/**`은 게이트웨이 비라우팅** — 서비스 간 내부 API는 외부 진입점에서 404 (decisions 22).
+
 ## 아키텍처
 
 ```mermaid
 flowchart TB
-    Client([Client]) -- HTTP --> App
+    Client([Client]) --> GW["API Gateway :8080<br/>(gateway-app, Spring Cloud Gateway)"]
 
-    subgraph App["Spring Boot 단일 앱 — Java 17 / Boot 3.5"]
-        direction TB
-        subgraph order["order — 주문 처리"]
-            SYNC["동기 주문"]
-            ASYNC["비동기 주문 접수 (즉시 202)"]
-            CONSUMER["Kafka Consumer<br/>배치 리스너 · DLQ · 재시도"]
-        end
-        subgraph product["product — 상품 조회"]
-            L1["L1 캐시 (Caffeine)"]
-        end
-        subgraph backoffice["backoffice"]
-            RBAC["Spring Security<br/>JWT + RBAC"]
-            BATCH["Spring Batch<br/>월별 정산"]
-        end
+    GW -- "/api/products/**" --> PS
+    GW -- "/api/orders/**" --> OS
+    GW -- "/api/auth/** · /api/admin/**" --> BS
+
+    subgraph PS["product-service :8081"]
+        PCACHE["L1 캐시 (Caffeine)"]
+    end
+    subgraph OS["order-service :8082"]
+        OCONS["주문 컨슈머<br/>배치 리스너 · DLQ"]
+    end
+    subgraph BS["backoffice-service :8083"]
+        RBAC["JWT + RBAC"]
+        BATCH["정산 배치"]
+        REPL["product_replica<br/>(이벤트 복제)"]
     end
 
-    subgraph Infra["Docker Compose"]
-        KAFKA[("Kafka")]
-        REDIS[("Redis<br/>L2 캐시 · pub/sub")]
-        MYSQL[("MySQL")]
+    subgraph MQ["Kafka"]
+        T1[("order.created")]
+        T2[("product.changed")]
     end
 
-    SYNC -- "INSERT" --> MYSQL
-    ASYNC -- "publish" --> KAFKA
-    KAFKA -- "consume" --> CONSUMER
-    CONSUMER -- "batch INSERT" --> MYSQL
-    L1 -- "miss" --> REDIS
-    REDIS -- "miss" --> MYSQL
-    BATCH -- "집계 (GROUP BY)" --> MYSQL
+    PS -- "변경 발행" --> T2
+    T2 -- "복제 소비" --> REPL
+    OS -- "접수 발행" --> T1
+    T1 -- "저장 소비" --> OCONS
+
+    PS --- PDB[("tps_product")]
+    OS --- ODB[("tps_order")]
+    BS --- BDB[("tps_backoffice<br/>users · settlements ·<br/>product_replica · batch 메타")]
+
+    PCACHE -. "L2" .-> REDIS[("Redis")]
+
+    BATCH -- "월별 집계 내부 API" --> OS
 ```
 
-상세: [docs/architecture.md](docs/architecture.md) · 멀티 인스턴스/AWS 확장 설계: [docs/scalable-architecture.md](docs/scalable-architecture.md)
+> DB는 서비스별 스키마로 분리 (같은 MySQL 인스턴스 — 로컬 데모 한계, 운영이면 인스턴스도 분리).
+> 모놀리스 시절 구조는 [docs/architecture.md](docs/architecture.md), 전환 전체 그림은 [docs/msa-architecture.md](docs/msa-architecture.md).
+
+### 모듈 구성
+
+```
+product/          도메인 라이브러리 (캐시 계층 포함)
+order/            도메인 라이브러리 (Kafka 컨슈머 포함)
+backoffice/       도메인 라이브러리 (RBAC·배치·복제본 포함)
+product-app/      :8081 부트 앱 (DB: tps_product)
+order-app/        :8082 부트 앱 (DB: tps_order)
+backoffice-app/   :8083 부트 앱 (DB: tps_backoffice)
+gateway-app/      :8080 API 게이트웨이 — 클라이언트 단일 진입점
+app/              조합 앱 — 통합 테스트 하네스 (전 도메인 단일 컨텍스트, :8080이라 게이트웨이와 동시 기동 불가)
+```
 
 ## 기술 스택
 
-- Java 17, Spring Boot 3.5 (Web, Data JPA, Security, Batch, Validation, Actuator)
-- MySQL 8.0, Redis 7 (L2 캐시·pub/sub), Caffeine (L1 캐시)
-- Kafka 3.8 (KRaft) — Producer/Consumer(배치 리스너), DLQ, 재시도
+- Java 17, Spring Boot 3.5 (Web, Data JPA, Security, Batch, Validation, Actuator) — Gradle 멀티모듈
+- Spring Cloud Gateway (API 게이트웨이, 경로 라우팅 Java DSL)
+- MySQL 8.0 (서비스별 스키마), Redis 7 (L2 캐시·pub/sub), Caffeine (L1 캐시)
+- Kafka 3.8 (KRaft) — Producer/Consumer(배치 리스너), DLQ, 재시도, 이벤트 기반 데이터 복제
 - Docker Compose, k6 (부하테스트)
 - Prometheus + Grafana — Micrometer 메트릭, 데이터소스·대시보드 프로비저닝 코드화 ([monitoring/](monitoring/))
 
@@ -84,11 +128,16 @@ flowchart TB
 ```bash
 # 1. 인프라 기동 (MySQL 3307, Redis 16379, Kafka 9092, Prometheus 9090, Grafana 3000)
 docker compose up -d
+# 기존 볼륨을 재사용한다면 docker/mysql-init의 서비스별 스키마 생성을 1회 수동 적용
 
-# 2. 애플리케이션 (Java 17 필요)
-./gradlew bootRun
+# 2. 서비스 빌드 + 기동 (Java 17 필요)
+./gradlew assemble
+java -jar product-app/build/libs/product-app-0.0.1-SNAPSHOT.jar        # :8081
+java -jar order-app/build/libs/order-app-0.0.1-SNAPSHOT.jar            # :8082
+java -jar backoffice-app/build/libs/backoffice-app-0.0.1-SNAPSHOT.jar  # :8083
+java -jar gateway-app/build/libs/gateway-app-0.0.1-SNAPSHOT.jar        # :8080 — 이후 모든 호출은 8080으로
 
-# 3. 통합 테스트 (인프라가 떠 있어야 함)
+# 3. 통합 테스트 — 조합 앱(app)이 전 도메인을 한 컨텍스트로 띄움 (인프라가 떠 있어야 함)
 ./gradlew test
 
 # 4. 부하테스트 예시 (k6 필요)
@@ -96,18 +145,20 @@ k6 run -e RATE=1000 -e DURATION=30s load-test/order-sync-baseline.js
 k6 run -e TOTAL_RATE=1000 -e DURATION=30s load-test/mixed-final.js
 ```
 
-- 관리자 시드 계정: `admin` / `admin1234!` (데모용 — `application.yml`)
-- 정산 실행: `POST /api/admin/settlements/run?month=2026-06` (ADMIN 토큰 필요)
-- 모니터링 대시보드: http://localhost:3000 (`admin` / `admin1234`) — 처리량·p95/p99·에러율·커넥션 풀·Kafka 리스너 패널 자동 프로비저닝
+- 관리자 시드 계정: `admin` / `admin1234!` (데모용 — backoffice-app `application.yml`)
+- 정산 실행: `POST /api/admin/settlements/run?month=2026-06` (ADMIN 토큰 필요, 게이트웨이 :8080 경유)
+- 모니터링 대시보드: http://localhost:3000 (`admin` / `admin1234`) — 스크레이프 타깃은 :8080 단일 구성 기준 (서비스별 타깃 확장은 데모 범위 밖, [msa-architecture.md](docs/msa-architecture.md) 참고)
 
 ## 문서
 
 | 문서 | 내용 |
 |---|---|
-| [docs/decisions.md](docs/decisions.md) | 설계 결정 15개 — 기술 선택의 이유, 대안, 트레이드오프 |
+| [docs/decisions.md](docs/decisions.md) | 설계 결정 22개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환) |
+| [docs/msa-architecture.md](docs/msa-architecture.md) | MSA 전환 단계·목표 아키텍처·바꿔야 했던 구조 전체 목록 |
 | [docs/benchmarks.md](docs/benchmarks.md) | 측정 4종 — 환경, 시나리오, 수치, 병목 분석, 한계 |
-| [docs/architecture.md](docs/architecture.md) | 전체 구조 |
+| [docs/architecture.md](docs/architecture.md) | 모놀리스(전환 전) 전체 구조 |
 | [docs/scalable-architecture.md](docs/scalable-architecture.md) | 운영 환경(AWS) 확장 설계 |
+| [docs/interview-qa.md](docs/interview-qa.md) | 면접 예상 꼬리 질문·답변 — 결정 번호로 근거 인용 |
 
 ## License
 
