@@ -1,0 +1,24 @@
+// 부트스트랩 모듈 — @SpringBootApplication, application.yml, 통합 테스트가 산다.
+// 통합 테스트는 전 도메인을 한 컨텍스트로 띄우므로(IntegrationTestBase) 도메인 모듈이 아니라 여기에 둔다.
+apply plugin: 'org.springframework.boot'
+
+dependencies {
+	implementation project(':backoffice')
+	implementation project(':order')
+	implementation project(':product')
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// 통합 테스트가 직접 임포트하는 타입들(MediaType, KafkaTemplate, StringRedisTemplate, 엔티티의 jakarta.persistence)
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-web'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	testImplementation 'org.springframework.kafka:spring-kafka'
+	testImplementation 'org.awaitility:awaitility'
+	testImplementation 'org.springframework.batch:spring-batch-test'
+	testImplementation 'org.springframework.kafka:spring-kafka-test'
+	testImplementation 'org.springframework.security:spring-security-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}

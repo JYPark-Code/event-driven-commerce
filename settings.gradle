@@ -1,1 +1,6 @@
 rootProject.name = 'tps1000'
+
+include 'product'
+include 'order'
+include 'backoffice'
+include 'app'

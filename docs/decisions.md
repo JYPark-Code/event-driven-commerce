@@ -214,6 +214,22 @@
 
 ---
 
+## 17. [msa 브랜치] MSA 1단계: Gradle 멀티모듈 — 패키지 경계를 모듈 경계로 승격
+
+- **맥락**: 2번 결정(모듈러 모놀리식)의 후속. main은 측정 수치와 코드의 일치성을 위해 모놀리스로 보존하고, MSA 전환은 이 브랜치에서 단계적으로 진행한다. 1단계는 배포 형태(단일 부트 앱)와 동작을 바꾸지 않으면서 도메인 경계만 빌드 수준에서 강제한다.
+- **모듈 구성**: `product` / `order` / `backoffice`(→product) / `app`(부트스트랩: @SpringBootApplication + application.yml + 통합 테스트).
+  - 통합 테스트는 전 도메인을 한 컨텍스트로 띄우므로(11번, IntegrationTestBase) 도메인 모듈이 아니라 app에 둔다.
+- **common 패키지 해체**: common/config에 있던 3개 설정이 사실 전부 특정 도메인 소유였다 — CacheConfig→product(ProductCacheLayer 배선), KafkaConfig→order(주문 토픽·DLQ 정책), SecurityConfig→backoffice(JWT 필터 배선). "공통"이라는 이름이 숨기고 있던 결합이 모듈화로 드러난 것 자체가 수확.
+- **남은 도메인 간 결합 1개를 빌드 파일에 명시**: `backoffice → product` (정산 프로세서의 상품 단가 조회, 14번). MSA 2단계에서 API 호출 또는 이벤트 기반 데이터 복제로 해소할 지점.
+- **컴파일 설정 명시화 (전환 중 발견)**:
+  - `-parameters`: 단일 모듈에선 부트 플러그인이 자동 주입했지만 java-library 모듈엔 없어 @PathVariable 이름 해석이 깨졌다(테스트 7개 실패로 발견). 루트에서 전 모듈에 명시.
+  - `UTF-8` 소스 인코딩: Windows 기본(CP949) 의존이 컴파일 에러로 표면화 — 루트에서 고정.
+- **부수 정리**: 미사용 `spring-boot-starter-cache` 제거(@EnableCaching/CacheManager 미사용 — 캐시는 12번대로 수동 look-aside). 모듈별 의존성 명세가 정확해지는 것이 멀티모듈의 부수 이득.
+- **검증**: 전 모듈 컴파일 + 통합 테스트 25개 전체 통과 (docker compose 인프라 기동 상태).
+- **트레이드오프**: 빌드 파일 5개로 증가, 모듈 간 의존을 명시해야 하는 비용. 대신 경계 위반이 컴파일 에러로 잡힌다.
+
+---
+
 ## 앞으로 채울 결정들 (TODO)
 - [x] 캐시 무효화 전략 → 12번 (측정은 benchmarks.md 측정 2)
 - [x] RBAC 권한 모델 → 13번

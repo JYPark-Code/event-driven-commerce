@@ -1,0 +1,7 @@
+// 주문 도메인 — Kafka 비동기 접수·배치 컨슈머 (축 1). 상품과는 productId로만 느슨히 결합(FK 없음, decisions.md 5번).
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.kafka:spring-kafka'
+}
