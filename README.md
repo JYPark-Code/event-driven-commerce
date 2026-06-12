@@ -17,10 +17,11 @@
 | 컨슈머 처리량: 레코드 단위 → 배치 리스너 + JDBC batch | **195건/s → 2,000건/s 이상** (스레드 수 동일, I/O 구조만 변경) |
 | 상품 조회: MySQL → L2(Redis) → L1(Caffeine) (1000 req/s) | p95 **541ms → 3.8ms → 577µs** |
 | 종합 혼합 부하 (조회 80% + 주문 20%) | **1000 TPS: 에러 0%, drop 0, p95 ≤3.5ms, 저장까지 ≤2초** — 한계는 3000\~5000/s 사이 |
+| MSA 구성(게이트웨이 경유) 혼합 부하 | **1000\~2000 TPS: 에러 0%, drop 0, p95 ≤3.3ms** — 같은 세션 비교로 홉 비용 ≈ 1ms(편차 수준), 한계는 자원 경합이 결정 (측정 5) |
 | 데이터 정합성 (전 측정 누적) | 주문 중복 **0**, 미처리 **0** (멱등 키 + DB 유니크 제약) |
 
 > 부하기(k6)·앱·Docker가 같은 머신에서 동작한 측정 — 절대값보다 구성 간 상대 비교가 목적입니다.
-> 수치는 모놀리스 구성(main) 기준이며, 게이트웨이 홉이 추가된 MSA 구성은 별도 베이스라인이 필요해 재측정하지 않았습니다.
+> 측정 1~4는 모놀리스 구성(main) 기준이고, MSA 구성은 측정 5(msa 브랜치)에서 **같은 세션에 조합 앱 ↔ 게이트웨이 구성을 연달아 측정**해 홉 비용만 분리했습니다 — 날짜가 다른 측정끼리는 비교하지 않습니다(측정 3의 교훈).
 > 방법론과 한계는 [benchmarks.md](docs/benchmarks.md) 참고.
 
 ## 4개 핵심 축
@@ -156,7 +157,7 @@ k6 run -e TOTAL_RATE=1000 -e DURATION=30s load-test/mixed-final.js
 
 | 문서 | 내용 |
 |---|---|
-| [docs/decisions.md](docs/decisions.md) | 설계 결정 25개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환, 23~25번이 보안 하드닝) |
+| [docs/decisions.md](docs/decisions.md) | 설계 결정 26개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환, 23~25번이 보안 하드닝, 26번이 게이트웨이 부하 측정) |
 | [docs/msa-architecture.md](docs/msa-architecture.md) | MSA 전환 단계·목표 아키텍처·바꿔야 했던 구조 전체 목록 |
 | [docs/benchmarks.md](docs/benchmarks.md) | 측정 4종 — 환경, 시나리오, 수치, 병목 분석, 한계 |
 | [docs/architecture.md](docs/architecture.md) | 모놀리스(전환 전) 전체 구조 |
