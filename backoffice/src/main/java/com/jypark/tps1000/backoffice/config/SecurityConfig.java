@@ -35,8 +35,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/auth/**", "/api/orders/**", "/api/products/**", "/actuator/**").permitAll()
-                        // 서비스 간 내부 API (조합 앱에서 정산→주문 집계 호출 경로). 데모는 공개,
-                        // 운영이면 내부망/서비스 간 인증으로 보호 — docs/msa-architecture.md
+                        // 서비스 간 내부 API (조합 앱에서 정산→주문 집계 호출 경로). security 단에선 통과시키고
+                        // 토큰 검증은 InternalApiTokenFilter(서블릿 필터)가 맡는다 — security 의존이 없는
+                        // order-app에서도 같은 필터로 보호되도록 검증 지점을 order 모듈에 둔다 (decisions.md 23번)
                         .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated())
                 // 미인증=401, 권한 부족=403을 명시적으로 분리 (기본 entry point는 둘 다 403으로 뭉개질 수 있음)

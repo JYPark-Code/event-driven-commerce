@@ -6,8 +6,9 @@ spring:
 
   datasource:
     url: jdbc:mysql://localhost:3307/tps_product?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
-    username: tps
-    password: tps1234
+    # 기본값은 로컬 docker-compose 데모 계정. 운영은 환경변수 주입 — 시크릿 외부화(decisions.md 23번)
+    username: ${DB_USERNAME:tps}
+    password: ${DB_PASSWORD:tps1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20

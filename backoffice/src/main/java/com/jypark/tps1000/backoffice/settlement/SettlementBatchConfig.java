@@ -85,8 +85,15 @@ public class SettlementBatchConfig {
     @StepScope
     public ItemReader<ProductSales> monthlyOrderSalesReader(
             @Value("#{jobParameters['month']}") String month,
-            @Value("${backoffice.order-service.url}") String orderServiceUrl) {
-        return new MonthlyOrderSalesReader(RestClient.create(orderServiceUrl), month);
+            @Value("${backoffice.order-service.url}") String orderServiceUrl,
+            @Value("${internal.api-token}") String internalApiToken) {
+        // 내부 API 공유 시크릿(decisions.md 23번). 헤더 이름은 order 쪽 InternalApiTokenFilter와
+        // 문자열로만 일치 — 상수 공유도 컴파일 의존이라 두지 않는다(18번 원칙).
+        RestClient restClient = RestClient.builder()
+                .baseUrl(orderServiceUrl)
+                .defaultHeader("X-Internal-Token", internalApiToken)
+                .build();
+        return new MonthlyOrderSalesReader(restClient, month);
     }
 
     /** 수량 합에 정산 시점 단가(복제본)를 곱해 정산 행으로 변환. 복제본에 없으면(이벤트 미수신·삭제) null 반환 → 스킵. */

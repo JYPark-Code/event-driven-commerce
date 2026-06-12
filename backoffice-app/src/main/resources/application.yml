@@ -7,8 +7,9 @@ spring:
 
   datasource:
     url: jdbc:mysql://localhost:3307/tps_backoffice?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
-    username: tps
-    password: tps1234
+    # 기본값은 로컬 docker-compose 데모 계정. 운영은 환경변수 주입 — 시크릿 외부화(decisions.md 23번)
+    username: ${DB_USERNAME:tps}
+    password: ${DB_PASSWORD:tps1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
@@ -34,14 +35,18 @@ spring:
       initialize-schema: always
 
 jwt:
-  # 데모용 고정 키. 발급자=검증자(이 서비스)라 분리 후에도 HS256으로 충분 — RS256 전환 시점은 docs/msa-architecture.md 4번.
-  secret: tps1000-demo-jwt-secret-key-do-not-use-in-production-0123456789
+  # 환경변수 우선, 없으면 로컬 데모 키. 발급자=검증자(이 서비스)라 분리 후에도 HS256으로 충분 — RS256 전환 시점은 docs/msa-architecture.md 4번.
+  secret: ${JWT_SECRET:tps1000-demo-jwt-secret-key-do-not-use-in-production-0123456789}
   expiry-seconds: 3600
+
+internal:
+  # 정산 리더가 order-app의 /internal 집계 API를 호출할 때 보내는 공유 시크릿 — order-app과 같은 값이어야 한다.
+  api-token: ${INTERNAL_API_TOKEN:tps1000-internal-demo-token}
 
 backoffice:
   admin:
     username: admin
-    password: admin1234!
+    password: ${BACKOFFICE_ADMIN_PASSWORD:admin1234!}
   # 복제 컨슈머 그룹 — 배포 단위(DB)마다 분리해야 경쟁 소비가 없다 (ProductReplicaConsumer 주석).
   # 그룹 이름 변경 = 토픽 재생으로 복제본 재구축.
   replica-consumer-group: backoffice-product-replica
