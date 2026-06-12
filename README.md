@@ -57,6 +57,7 @@
 - **컨슈머 그룹은 배포 단위(DB)마다 분리** — 하네스와 분리 앱이 그룹을 공유하면 경쟁 소비로 주문이 두 DB에 쪼개진다 (3b-2 작업 중 실제 발생, decisions 21). 복제본은 새 그룹 + earliest로 토픽을 재생해 재구축.
 - **`/internal/**`은 게이트웨이 비라우팅 + 공유 시크릿** — 외부 진입점에서 404, 포트 직접 접근도 `X-Internal-Token` 검증(상수 시간 비교)에 걸린다 (decisions 22·23).
 - **시크릿 외부화** — JWT 키·DB/관리자 비밀번호는 `${ENV_VAR:로컬기본값}` 패턴. 데모는 clone 직후 실행 가능, 운영은 환경변수/비밀관리자 주입 (decisions 23).
+- **로그인 브루트포스 방어** — 게이트웨이에서 `/api/auth/**`만 IP별 토큰 버킷(RedisRateLimiter, 2/s·burst 5) → 429. 부하테스트 경로엔 걸지 않아 측정 조건 불변 (decisions 24).
 
 ## 아키텍처
 
@@ -154,7 +155,7 @@ k6 run -e TOTAL_RATE=1000 -e DURATION=30s load-test/mixed-final.js
 
 | 문서 | 내용 |
 |---|---|
-| [docs/decisions.md](docs/decisions.md) | 설계 결정 23개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환, 23번이 보안 하드닝) |
+| [docs/decisions.md](docs/decisions.md) | 설계 결정 24개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환, 23~24번이 보안 하드닝) |
 | [docs/msa-architecture.md](docs/msa-architecture.md) | MSA 전환 단계·목표 아키텍처·바꿔야 했던 구조 전체 목록 |
 | [docs/benchmarks.md](docs/benchmarks.md) | 측정 4종 — 환경, 시나리오, 수치, 병목 분석, 한계 |
 | [docs/architecture.md](docs/architecture.md) | 모놀리스(전환 전) 전체 구조 |
