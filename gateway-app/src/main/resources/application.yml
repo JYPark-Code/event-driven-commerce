@@ -23,6 +23,8 @@ server:
   port: 8080  # 모놀리스와 동일 — 클라이언트 인터페이스 불변 (조합 앱과 동시 기동 불가)
 
 management:
+  server:
+    port: 9080  # 관리 포트 분리 (decisions.md 25번). 조합 앱(9080)과 같지만 서비스 포트(8080)처럼 동시 기동이 없어 무충돌
   endpoints:
     web:
       exposure:

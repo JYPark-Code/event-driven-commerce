@@ -15,9 +15,12 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate  # 스키마는 Flyway 소유 (decisions.md 25번)
     open-in-view: false
     show-sql: false
+
+  flyway:
+    baseline-on-migrate: true  # 기존 데모 DB 호환 — 마이그레이션은 IF NOT EXISTS로 멱등
 
   kafka:
     bootstrap-servers: localhost:9092
@@ -45,6 +48,8 @@ server:
   port: 8082
 
 management:
+  server:
+    port: 9082  # 관리 포트 분리 (decisions.md 25번) — 서비스 포트에선 /actuator 비노출
   endpoints:
     web:
       exposure:

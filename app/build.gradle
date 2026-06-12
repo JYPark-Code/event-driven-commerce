@@ -7,6 +7,9 @@ dependencies {
 	implementation project(':order')
 	implementation project(':product')
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// 스키마 마이그레이션 (decisions.md 25번) — 세 도메인 모듈의 db/migration(V1~V3)을 모두 적용
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-mysql'
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 

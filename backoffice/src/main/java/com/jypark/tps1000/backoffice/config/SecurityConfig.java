@@ -17,8 +17,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * JWT + RBAC (축 3).
  * - /api/admin/**: ADMIN 전용 (백오피스)
  * - /api/auth/**: 공개 (가입/로그인)
- * - /api/orders/**, /api/products/**, /actuator/**: 공개 유지 — 부하테스트(축 4) 대상 경로에
+ * - /api/orders/**, /api/products/**: 공개 유지 — 부하테스트(축 4) 대상 경로에
  *   인증을 끼우면 축 1·2의 측정 조건이 바뀐다. 보호 범위 결정 근거는 docs/decisions.md 13번.
+ * - /actuator/**: 관리 포트(9083)로 분리(decisions.md 25번) — permitAll은 관리 포트 응답을 위해
+ *   유지하고, 서비스 포트(8083)의 /actuator는 anyRequest 기본 거부(401)에 걸려 접근 불가.
  */
 @Configuration
 @EnableWebSecurity

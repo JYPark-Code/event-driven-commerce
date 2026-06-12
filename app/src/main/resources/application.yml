@@ -14,12 +14,17 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update          # 데모 단계: 엔티티 기반 자동 스키마. 운영이면 Flyway로 전환할 지점.
+      ddl-auto: validate        # 스키마는 Flyway가 소유(decisions.md 25번) — 엔티티와 어긋나면 부팅 실패로 드러난다
     open-in-view: false         # OSIV 끔 — 영속성 컨텍스트 수명을 트랜잭션으로 한정 (커넥션 점유 시간 단축)
     show-sql: false
     properties:
       hibernate:
         format_sql: true
+
+  flyway:
+    # 기존 데모 DB(ddl-auto가 만든 테이블 존재)에 처음 얹을 때 비어있지 않은 스키마를 baseline 처리.
+    # 마이그레이션이 IF NOT EXISTS라 기존/신규 볼륨 모두 멱등 (decisions.md 25번)
+    baseline-on-migrate: true
 
   data:
     redis:
@@ -77,6 +82,8 @@ server:
   port: 8080
 
 management:
+  server:
+    port: 9080  # 관리 포트 분리(decisions.md 25번) — 서비스 포트(8080)에선 /actuator가 사라진다. Prometheus 타깃도 9080.
   endpoints:
     web:
       exposure:

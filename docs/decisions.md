@@ -336,6 +336,23 @@
 
 ---
 
+## 25. [msa 브랜치] 보안 하드닝 3차: actuator 관리 포트 분리 + Flyway 전환 + IDOR 문서화
+
+- **actuator 관리 포트 분리** (`management.server.port`):
+  - **맥락**: 23번에서 미룬 항목 — metrics·prometheus까지 서비스 포트에 `permitAll`로 노출돼 엔드포인트별 응답시간·JVM 상태가 외부에 보였다.
+  - **결정**: 서비스 포트와 분리 — app·gateway 9080 / product 9081 / order 9082 / backoffice 9083 (조합 앱과 게이트웨이는 서비스 포트처럼 동시 기동이 없어 9080 공유). Prometheus 타깃을 9080으로 변경. 운영이면 관리 포트만 내부망에 열어 노출 끝점이 사라진다.
+  - **확인된 동작**: 서비스 포트의 /actuator는 product·order·gateway에서 404, backoffice에선 security 기본 거부(anyRequest)에 걸려 401 — 어느 쪽이든 비접근. `/actuator/**` permitAll은 관리 포트 응답을 위해 유지.
+- **Flyway 전환** (`ddl-auto: update` → `validate`):
+  - **맥락**: ddl-auto: update는 엔티티 변경이 곧바로 운영 DDL이 되는 구조 — 의도치 않은 스키마 변경(컬럼 타입 변경, 제약 누락)이 배포와 동시에 조용히 적용된다. 17번부터 줄곧 "운영이면 전환할 지점"으로 적어온 항목.
+  - **DDL 기준**: Hibernate가 만들어 둔 실제 스키마(`SHOW CREATE TABLE`)를 그대로 고정 — 손으로 옮겨 적다 어긋나면 validate가 부팅을 막아주는 구조라, 어긋남이 침묵하지 않는다.
+  - **버전 번호를 모듈별로 분할 (V1 product / V2 order / V3 backoffice)**: 마이그레이션 파일을 (앱이 아니라) 도메인 모듈의 `db/migration`에 둬서 DDL의 단일 출처를 유지한다. 조합 앱은 세 모듈을 한 클래스패스에서 모두 보므로 버전이 겹치면 Flyway가 실패 — 모듈별 번호 분할이 그 충돌을 피하면서 분리 앱(자기 버전만 보임)과 조합 앱(V1~V3 전부) 양쪽에서 성립한다.
+  - **기존 DB 호환**: `baseline-on-migrate: true` + 마이그레이션 전체 `IF NOT EXISTS` — 기존 볼륨(테이블 존재)은 baseline 후 no-op, 새 볼륨은 정상 적용. 검증 결과 tps1000은 baseline+V2·V3, 서비스 스키마는 각자 자기 버전만 기록됐다.
+  - **BATCH_* 메타는 제외**: Spring Batch 자체 초기화가 버전별 공식 DDL을 관리 — 중복 정의하면 배치 업그레이드 때 두 출처가 어긋난다.
+- **IDOR 문서화** (`GET /api/orders/{orderId}`): 순차 ID라 타인 주문 열람 가능. 이 경로는 무인증 측정 대상(13번)이라 "소유자" 개념 자체가 성립하지 않아 데모 범위에서 수용 — 실서비스라면 인증 주체의 소유 검증 + 외부 키는 추측 불가 값(비동기 주문 orderKey가 이미 그 패턴). 코드 주석으로 한계를 명시(OrderController).
+- **검증**: 통합 테스트 전체 통과(validate 부팅 = 마이그레이션 DDL과 엔티티 일치 증명) + 4개 앱 E2E — 관리 포트 4개 health 200, 서비스 포트 /actuator 비접근, Prometheus 새 타깃(9080) up, 로그인·404·내부 토큰 스모크 정상. — **이로써 23번에서 적어둔 남은 하드닝 항목은 모두 처리(분산 공격 대응·내부망 격리는 운영 영역으로 명시).**
+
+---
+
 ## 앞으로 채울 결정들 (TODO)
 - [x] 캐시 무효화 전략 → 12번 (측정은 benchmarks.md 측정 2)
 - [x] RBAC 권한 모델 → 13번

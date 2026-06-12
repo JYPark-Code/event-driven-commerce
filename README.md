@@ -58,6 +58,7 @@
 - **`/internal/**`은 게이트웨이 비라우팅 + 공유 시크릿** — 외부 진입점에서 404, 포트 직접 접근도 `X-Internal-Token` 검증(상수 시간 비교)에 걸린다 (decisions 22·23).
 - **시크릿 외부화** — JWT 키·DB/관리자 비밀번호는 `${ENV_VAR:로컬기본값}` 패턴. 데모는 clone 직후 실행 가능, 운영은 환경변수/비밀관리자 주입 (decisions 23).
 - **로그인 브루트포스 방어** — 게이트웨이에서 `/api/auth/**`만 IP별 토큰 버킷(RedisRateLimiter, 2/s·burst 5) → 429. 부하테스트 경로엔 걸지 않아 측정 조건 불변 (decisions 24).
+- **스키마는 Flyway 소유** — `ddl-auto: validate` + 도메인 모듈별 마이그레이션(V1~V3 분할로 조합 앱 충돌 회피), actuator는 관리 포트(9080~9083)로 분리 (decisions 25).
 
 ## 아키텍처
 
@@ -120,7 +121,7 @@ app/              조합 앱 — 통합 테스트 하네스 (전 도메인 단�
 
 - Java 17, Spring Boot 3.5 (Web, Data JPA, Security, Batch, Validation, Actuator) — Gradle 멀티모듈
 - Spring Cloud Gateway (API 게이트웨이, 경로 라우팅 Java DSL)
-- MySQL 8.0 (서비스별 스키마), Redis 7 (L2 캐시·pub/sub), Caffeine (L1 캐시)
+- MySQL 8.0 (서비스별 스키마, Flyway 마이그레이션), Redis 7 (L2 캐시·pub/sub·rate limit 카운터), Caffeine (L1 캐시)
 - Kafka 3.8 (KRaft) — Producer/Consumer(배치 리스너), DLQ, 재시도, 이벤트 기반 데이터 복제
 - Docker Compose, k6 (부하테스트)
 - Prometheus + Grafana — Micrometer 메트릭, 데이터소스·대시보드 프로비저닝 코드화 ([monitoring/](monitoring/))
@@ -149,13 +150,13 @@ k6 run -e TOTAL_RATE=1000 -e DURATION=30s load-test/mixed-final.js
 
 - 관리자 시드 계정: `admin` / `admin1234!` (데모용 — backoffice-app `application.yml`)
 - 정산 실행: `POST /api/admin/settlements/run?month=2026-06` (ADMIN 토큰 필요, 게이트웨이 :8080 경유)
-- 모니터링 대시보드: http://localhost:3000 (`admin` / `admin1234`) — 스크레이프 타깃은 :8080 단일 구성 기준 (서비스별 타깃 확장은 데모 범위 밖, [msa-architecture.md](docs/msa-architecture.md) 참고)
+- 모니터링 대시보드: http://localhost:3000 (`admin` / `admin1234`) — 스크레이프 타깃은 :9080(관리 포트, decisions 25) 단일 구성 기준 (서비스별 타깃 확장은 데모 범위 밖, [msa-architecture.md](docs/msa-architecture.md) 참고)
 
 ## 문서
 
 | 문서 | 내용 |
 |---|---|
-| [docs/decisions.md](docs/decisions.md) | 설계 결정 24개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환, 23~24번이 보안 하드닝) |
+| [docs/decisions.md](docs/decisions.md) | 설계 결정 25개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환, 23~25번이 보안 하드닝) |
 | [docs/msa-architecture.md](docs/msa-architecture.md) | MSA 전환 단계·목표 아키텍처·바꿔야 했던 구조 전체 목록 |
 | [docs/benchmarks.md](docs/benchmarks.md) | 측정 4종 — 환경, 시나리오, 수치, 병목 분석, 한계 |
 | [docs/architecture.md](docs/architecture.md) | 모놀리스(전환 전) 전체 구조 |

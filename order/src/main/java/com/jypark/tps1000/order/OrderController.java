@@ -28,6 +28,12 @@ public class OrderController {
         return orderService.placeOrder(request);
     }
 
+    /**
+     * 알려진 한계 — IDOR (decisions.md 25번): 순차 증가 ID라 타인 주문 열람이 가능하다.
+     * 이 경로는 부하테스트 측정 대상이라 무인증이고(13번), 인증 주체가 없으면 "소유자" 개념도
+     * 성립하지 않아 데모 범위에서 수용. 실서비스라면 인증 주체의 소유 검증 + 외부 노출 키는
+     * 추측 불가 값(UUID) — 비동기 주문의 orderKey가 이미 그 패턴이다.
+     */
     @GetMapping("/{orderId}")
     public OrderResponse getOrder(@PathVariable Long orderId) {
         return orderService.getOrder(orderId);

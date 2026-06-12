@@ -4,6 +4,9 @@ apply plugin: 'org.springframework.boot'
 dependencies {
 	implementation project(':product')
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// 스키마 마이그레이션 (decisions.md 25번) — DDL은 도메인 모듈의 db/migration에서 온다
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-mysql'
 	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 }
