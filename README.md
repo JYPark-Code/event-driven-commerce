@@ -17,10 +17,11 @@
 | 컨슈머 처리량: 레코드 단위 → 배치 리스너 + JDBC batch | **195건/s → 2,000건/s 이상** (스레드 수 동일, I/O 구조만 변경) |
 | 상품 조회: MySQL → L2(Redis) → L1(Caffeine) (1000 req/s) | p95 **541ms → 3.8ms → 577µs** |
 | 종합 혼합 부하 (조회 80% + 주문 20%) | **1000 TPS: 에러 0%, drop 0, p95 ≤3.5ms, 저장까지 ≤2초** — 한계는 3000\~5000/s 사이 |
+| MSA 구성(게이트웨이 경유) 혼합 부하 | **1000\~2000 TPS: 에러 0%, drop 0, p95 ≤3.3ms** — 같은 세션 비교로 홉 비용 ≈ 1ms(편차 수준), 한계는 자원 경합이 결정 (측정 5) |
 | 데이터 정합성 (전 측정 누적) | 주문 중복 **0**, 미처리 **0** (멱등 키 + DB 유니크 제약) |
 
 > 부하기(k6)·앱·Docker가 같은 머신에서 동작한 측정 — 절대값보다 구성 간 상대 비교가 목적입니다.
-> 수치는 모놀리스 구성(main) 기준이며, 게이트웨이 홉이 추가된 MSA 구성은 별도 베이스라인이 필요해 재측정하지 않았습니다.
+> 측정 1~4는 모놀리스 구성(main) 기준이고, MSA 구성은 측정 5(msa 브랜치)에서 **같은 세션에 조합 앱 ↔ 게이트웨이 구성을 연달아 측정**해 홉 비용만 분리했습니다 — 날짜가 다른 측정끼리는 비교하지 않습니다(측정 3의 교훈).
 > 방법론과 한계는 [benchmarks.md](docs/benchmarks.md) 참고.
 
 ## 4개 핵심 축
@@ -55,7 +56,10 @@
 - **같은 결합도 워크로드가 답을 가른다** — 상품(건별 다회 조회)은 이벤트 복제, 주문 집계(월 1회)는 동기 내부 API. 반대 선택의 이유가 각각 있다 (decisions 18·20).
 - **단일 DB가 숨기고 있던 결합** — 컴파일 의존을 다 끊은 뒤에도 정산이 `FROM orders`로 타 도메인 테이블을 직접 집계하고 있었다. DB를 분리하는 순간 깨지는 종류의 결합 (decisions 20).
 - **컨슈머 그룹은 배포 단위(DB)마다 분리** — 하네스와 분리 앱이 그룹을 공유하면 경쟁 소비로 주문이 두 DB에 쪼개진다 (3b-2 작업 중 실제 발생, decisions 21). 복제본은 새 그룹 + earliest로 토픽을 재생해 재구축.
-- **`/internal/**`은 게이트웨이 비라우팅** — 서비스 간 내부 API는 외부 진입점에서 404 (decisions 22).
+- **`/internal/**`은 게이트웨이 비라우팅 + 공유 시크릿** — 외부 진입점에서 404, 포트 직접 접근도 `X-Internal-Token` 검증(상수 시간 비교)에 걸린다 (decisions 22·23).
+- **시크릿 외부화** — JWT 키·DB/관리자 비밀번호는 `${ENV_VAR:로컬기본값}` 패턴. 데모는 clone 직후 실행 가능, 운영은 환경변수/비밀관리자 주입 (decisions 23).
+- **로그인 브루트포스 방어** — 게이트웨이에서 `/api/auth/**`만 IP별 토큰 버킷(RedisRateLimiter, 2/s·burst 5) → 429. 부하테스트 경로엔 걸지 않아 측정 조건 불변 (decisions 24).
+- **스키마는 Flyway 소유** — `ddl-auto: validate` + 도메인 모듈별 마이그레이션(V1~V3 분할로 조합 앱 충돌 회피), actuator는 관리 포트(9080~9083)로 분리 (decisions 25).
 
 ## 아키텍처
 
@@ -118,7 +122,7 @@ app/              조합 앱 — 통합 테스트 하네스 (전 도메인 단�
 
 - Java 17, Spring Boot 3.5 (Web, Data JPA, Security, Batch, Validation, Actuator) — Gradle 멀티모듈
 - Spring Cloud Gateway (API 게이트웨이, 경로 라우팅 Java DSL)
-- MySQL 8.0 (서비스별 스키마), Redis 7 (L2 캐시·pub/sub), Caffeine (L1 캐시)
+- MySQL 8.0 (서비스별 스키마, Flyway 마이그레이션), Redis 7 (L2 캐시·pub/sub·rate limit 카운터), Caffeine (L1 캐시)
 - Kafka 3.8 (KRaft) — Producer/Consumer(배치 리스너), DLQ, 재시도, 이벤트 기반 데이터 복제
 - Docker Compose, k6 (부하테스트)
 - Prometheus + Grafana — Micrometer 메트릭, 데이터소스·대시보드 프로비저닝 코드화 ([monitoring/](monitoring/))
@@ -147,13 +151,13 @@ k6 run -e TOTAL_RATE=1000 -e DURATION=30s load-test/mixed-final.js
 
 - 관리자 시드 계정: `admin` / `admin1234!` (데모용 — backoffice-app `application.yml`)
 - 정산 실행: `POST /api/admin/settlements/run?month=2026-06` (ADMIN 토큰 필요, 게이트웨이 :8080 경유)
-- 모니터링 대시보드: http://localhost:3000 (`admin` / `admin1234`) — 스크레이프 타깃은 :8080 단일 구성 기준 (서비스별 타깃 확장은 데모 범위 밖, [msa-architecture.md](docs/msa-architecture.md) 참고)
+- 모니터링 대시보드: http://localhost:3000 (`admin` / `admin1234`) — 스크레이프 타깃은 :9080(관리 포트, decisions 25) 단일 구성 기준 (서비스별 타깃 확장은 데모 범위 밖, [msa-architecture.md](docs/msa-architecture.md) 참고)
 
 ## 문서
 
 | 문서 | 내용 |
 |---|---|
-| [docs/decisions.md](docs/decisions.md) | 설계 결정 22개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환) |
+| [docs/decisions.md](docs/decisions.md) | 설계 결정 26개 — 기술 선택의 이유, 대안, 트레이드오프 (17~22번이 MSA 전환, 23~25번이 보안 하드닝, 26번이 게이트웨이 부하 측정) |
 | [docs/msa-architecture.md](docs/msa-architecture.md) | MSA 전환 단계·목표 아키텍처·바꿔야 했던 구조 전체 목록 |
 | [docs/benchmarks.md](docs/benchmarks.md) | 측정 4종 — 환경, 시나리오, 수치, 병목 분석, 한계 |
 | [docs/architecture.md](docs/architecture.md) | 모놀리스(전환 전) 전체 구조 |

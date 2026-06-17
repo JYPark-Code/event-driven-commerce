@@ -1,5 +1,6 @@
 # 로컬 개발/부하테스트용 인프라. MySQL · Redis · Kafka(KRaft, 단일 노드).
 # why KRaft: Zookeeper 제거로 컨테이너 1개로 Kafka 운영 → 데모 환경 단순화. (docs/decisions.md 참고)
+# 비밀번호류는 .env로 덮어쓸 수 있다(.env.example 참고, decisions.md 23번) — 없으면 로컬 데모 기본값.
 services:
   mysql:
     image: mysql:8.0
@@ -7,16 +8,17 @@ services:
     ports:
       - "3307:3306"   # 호스트 3306은 로컬 mysqld가 점유 → 충돌 회피 (docs/decisions.md)
     environment:
-      MYSQL_ROOT_PASSWORD: root1234
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root1234}
       MYSQL_DATABASE: tps1000
-      MYSQL_USER: tps
-      MYSQL_PASSWORD: tps1234
+      MYSQL_USER: ${MYSQL_USER:-tps}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-tps1234}   # 앱 쪽 DB_PASSWORD와 같은 값이어야 한다
       TZ: Asia/Seoul
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot1234"]
+      # CMD-SHELL + $$: 컨테이너 안의 MYSQL_ROOT_PASSWORD 환경변수를 쓴다 — 비밀번호를 바꿔도 헬스체크가 깨지지 않게
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p\"$$MYSQL_ROOT_PASSWORD\""]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -82,8 +84,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin1234
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin1234}
     volumes:
       # 데이터소스·대시보드를 코드로 프로비저닝 — 컨테이너를 지워도 클릭 설정 없이 재현된다
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

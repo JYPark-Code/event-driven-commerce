@@ -20,8 +20,9 @@ import java.util.List;
  * 정산(backoffice)이 월 1회 페이지 단위로 호출한다 — 호출 패턴이 "월별 집계"라
  * 이벤트 복제(상품, decisions.md 18번) 대신 동기 API를 택했다 (decisions.md 20번).
  *
- * /internal 네임스페이스: 외부 공개 API가 아님을 경로로 표시. 데모에선 열려 있고,
- * 운영이면 네트워크 정책(내부망)이나 서비스 간 인증으로 보호할 지점.
+ * /internal 네임스페이스: 외부 공개 API가 아님을 경로로 표시. 게이트웨이 비라우팅(404)에 더해
+ * X-Internal-Token 공유 시크릿으로 보호된다(InternalApiTokenFilter, decisions.md 23번).
+ * 운영이면 내부망 격리/mTLS로 올라갈 지점.
  */
 @RestController
 @RequestMapping("/internal/orders")

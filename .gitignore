@@ -41,6 +41,8 @@ out/
 .claude/settings.local.json
 
 ### Project ###
+# 실제 시크릿 값 — .env.example만 커밋한다 (decisions.md 23번)
+.env
 bootrun.log
 app.log
 app-err.log

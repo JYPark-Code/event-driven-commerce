@@ -3,16 +3,28 @@ spring:
   application:
     name: gateway
 
+  data:
+    redis:
+      host: localhost
+      port: 16379  # 캐시(L2)와 같은 인스턴스 공유 — rate limit 카운터 부하는 무시 가능 수준
+
 # 서비스 주소 — 로컬 고정 포트 (서비스 디스커버리는 데모 범위 밖, docs/msa-architecture.md)
 gateway:
   product-url: http://localhost:8081
   order-url: http://localhost:8082
   backoffice-url: http://localhost:8083
+  # /api/auth/** IP별 토큰 버킷 (decisions.md 24번) — 초당 2개 충전, 순간 최대 5개.
+  # 정상 사용자는 로그인 1~2회로 충분하고, 자동화 브루트포스는 초당 2회로 묶인다.
+  auth-rate-limit:
+    replenish-rate: 2
+    burst-capacity: 5
 
 server:
   port: 8080  # 모놀리스와 동일 — 클라이언트 인터페이스 불변 (조합 앱과 동시 기동 불가)
 
 management:
+  server:
+    port: 9080  # 관리 포트 분리 (decisions.md 25번). 조합 앱(9080)과 같지만 서비스 포트(8080)처럼 동시 기동이 없어 무충돌
   endpoints:
     web:
       exposure:

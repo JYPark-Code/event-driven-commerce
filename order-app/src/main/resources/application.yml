@@ -6,17 +6,21 @@ spring:
 
   datasource:
     url: jdbc:mysql://localhost:3307/tps_order?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
-    username: tps
-    password: tps1234
+    # 기본값은 로컬 docker-compose 데모 계정. 운영은 환경변수 주입 — 시크릿 외부화(decisions.md 23번)
+    username: ${DB_USERNAME:tps}
+    password: ${DB_PASSWORD:tps1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate  # 스키마는 Flyway 소유 (decisions.md 25번)
     open-in-view: false
     show-sql: false
+
+  flyway:
+    baseline-on-migrate: true  # 기존 데모 DB 호환 — 마이그레이션은 IF NOT EXISTS로 멱등
 
   kafka:
     bootstrap-servers: localhost:9092
@@ -36,10 +40,16 @@ spring:
         spring.json.value.default.type: com.jypark.tps1000.order.event.OrderCreatedEvent
         spring.json.use.type.headers: false
 
+internal:
+  # /internal/** 검증용 공유 시크릿 (InternalApiTokenFilter) — backoffice-app과 같은 값이어야 정산이 동작.
+  api-token: ${INTERNAL_API_TOKEN:tps1000-internal-demo-token}
+
 server:
   port: 8082
 
 management:
+  server:
+    port: 9082  # 관리 포트 분리 (decisions.md 25번) — 서비스 포트에선 /actuator 비노출
   endpoints:
     web:
       exposure:

@@ -1,6 +1,7 @@
 package com.jypark.tps1000.order;
 
 import com.jypark.tps1000.order.dto.MonthlyProductSalesResponse;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -16,6 +17,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByOrderKey(String orderKey);
 
     boolean existsByOrderKey(String orderKey);
+
+    /** 상태 필터가 있는 목록 조회(GET /api/orders). 정렬은 호출 측 Pageable이 결정한다. */
+    Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 
     /** 배치 컨슈머의 기처리 필터: 배치당 SELECT 1회로 멱등 검사 (측정 1-c-ii) */
     @Query("select o.orderKey from Order o where o.orderKey in :orderKeys")
