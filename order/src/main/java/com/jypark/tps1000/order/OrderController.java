@@ -2,6 +2,7 @@ package com.jypark.tps1000.order;
 
 import com.jypark.tps1000.order.dto.AsyncOrderAcceptedResponse;
 import com.jypark.tps1000.order.dto.CreateOrderRequest;
+import com.jypark.tps1000.order.dto.OrderPageResponse;
 import com.jypark.tps1000.order.dto.OrderResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,6 +28,19 @@ public class OrderController {
     @ResponseStatus(HttpStatus.CREATED)
     public OrderResponse placeOrder(@Valid @RequestBody CreateOrderRequest request) {
         return orderService.placeOrder(request);
+    }
+
+    /**
+     * 주문 목록 페이징 조회(읽기 전용). 정렬은 항상 createdAt 내림차순(+id 내림차순)으로 고정한다.
+     * page/size는 int로 바인딩되어 음수가 아닌 정수가 아니거나 int 범위를 넘으면 스프링이 400으로 거른다.
+     * 범위 검증(page>=0, size>=1, size 상한 클램프)과 status 매칭은 서비스에서 수행한다.
+     */
+    @GetMapping
+    public OrderPageResponse listOrders(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String status) {
+        return orderService.listOrders(page, size, status);
     }
 
     /**
