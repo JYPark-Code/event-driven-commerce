@@ -29,3 +29,31 @@
 
 ### 비고
 - 읽기 전용 추가형 기능 — 하네스가 안정적으로 처리. 정산 페이징의 "안정 정렬(보조키)" 패턴을 스스로 차용.
+
+---
+
+## #2 — 주문 취소 API (상태 머신 + 스키마 마이그레이션)
+
+- **날짜**: 2026-06-17
+- **반영**: PR #2 → `msa`
+- **엔드포인트**: `POST /api/orders/{orderId}/cancel`
+- **파이프라인**: 기획 1 rev · 비평 0 · 리뷰 1턴 · dev 루프 1
+
+### 구현 요약
+- `OrderController#cancelOrder` — CREATED만 취소(200 + 갱신 OrderResponse)
+- `OrderService#cancelOrder` — 미존재→404(EntityNotFoundException), 취소 불가 상태→409(ResponseStatusException)
+- `Order#isCancelable()` + `cancel()` — 가드/전이 분리
+- `OrderStatus`에 `CANCELED` 추가
+- **Flyway V4 마이그레이션**: `ALTER TABLE orders MODIFY status ENUM('COMPLETED','CREATED','FAILED','CANCELED')` —
+  스키마는 Flyway 소유(ddl-auto=validate)라 enum 값 추가 시 마이그레이션 필수
+
+### 검증
+- 게이트 green (실 MySQL에 V4 적용 + CANCELED 영속 테스트 통과)
+- `OrderCancelApiTest` 5케이스: CREATED→200(+DB 재조회로 CANCELED 영속 단언) /
+  COMPLETED·FAILED·이미CANCELED→409(DB 상태 불변 단언) / 미존재→404
+
+### 비고
+- **상태 변경 + 스키마 진화 기능**. 영속 enum 추가 → Flyway 마이그레이션 필요가 핵심 함정인데,
+  spec에 명시하니 하네스가 V4를 정확히 추가하고 DB ENUM까지 확장해 end-to-end로 동작.
+- (참고) 동일 기능을 마이그레이션 가이드 없이 eval로 돌렸을 땐 마이그레이션을 빠뜨려 CANCELED
+  저장이 'Data truncated'로 실패했었다 — 추가형 vs 스키마 변경 기능의 난이도 차이를 보여주는 대비.

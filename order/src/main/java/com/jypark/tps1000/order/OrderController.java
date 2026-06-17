@@ -54,6 +54,15 @@ public class OrderController {
         return orderService.getOrder(orderId);
     }
 
+    /**
+     * 주문 취소. CREATED 상태일 때만 취소되어 200 + 갱신된 OrderResponse를 반환한다.
+     * 미존재 orderId는 404, 이미 COMPLETED/FAILED/CANCELED인 주문은 409.
+     */
+    @PostMapping("/{orderId}/cancel")
+    public OrderResponse cancelOrder(@PathVariable Long orderId) {
+        return orderService.cancelOrder(orderId);
+    }
+
     /** 비동기 주문 접수: Kafka 발행 후 즉시 202. 동기(POST /api/orders)와의 응답시간 비교가 측정 포인트. */
     @PostMapping("/async")
     @ResponseStatus(HttpStatus.ACCEPTED)

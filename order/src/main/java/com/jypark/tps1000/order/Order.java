@@ -68,4 +68,14 @@ public class Order {
     public void complete() {
         this.status = OrderStatus.COMPLETED;
     }
+
+    /** CREATED 상태에서만 취소 가능. 그 외 상태면 false를 반환하고 상태를 바꾸지 않는다. */
+    public boolean isCancelable() {
+        return this.status == OrderStatus.CREATED;
+    }
+
+    /** 주문 취소: 상태만 CANCELED로 전이한다(환불·재고 복원 등 부수효과 없음). */
+    public void cancel() {
+        this.status = OrderStatus.CANCELED;
+    }
 }

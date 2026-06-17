@@ -101,4 +101,20 @@ public class OrderService {
                 .orElseThrow(() -> new EntityNotFoundException("order not found: " + orderId));
         return OrderResponse.from(order);
     }
+
+    /**
+     * 주문 취소: CREATED 상태일 때만 CANCELED로 전이한다(상태 전이만 — 환불·재고 복원 등은 범위 밖).
+     * 미존재 ID는 404, CREATED가 아닌 상태(COMPLETED/FAILED/CANCELED)는 409로 매핑한다.
+     */
+    @Transactional
+    public OrderResponse cancelOrder(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new EntityNotFoundException("order not found: " + orderId));
+        if (!order.isCancelable()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "order not cancelable in status: " + order.getStatus());
+        }
+        order.cancel();
+        return OrderResponse.from(order);
+    }
 }
